@@ -46,6 +46,54 @@ class GraphAttentionLayer(nn.Module):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
 
 
+class GraphGlobalAttentionLayer(nn.Module):
+    """
+    Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
+    """
+
+    def __init__(self, in_features, out_features, hot_node_1, hot_node_2, dropout, alpha, concat=True):
+        super(GraphAttentionLayer, self).__init__()
+        self.dropout = dropout
+        self.in_features = in_features
+        self.out_features = out_features
+        self.alpha = alpha
+        self.concat = concat
+        self.hot_node_1= hot_node_1
+        self.hot_node_2= hot_node_2
+
+        self.W = nn.Parameter(torch.zeros(size=(in_features, out_features)))
+        nn.init.xavier_uniform_(self.W.data, gain=1.414)
+        self.a_1 = nn.Parameter(torch.zeros(size=(out_features, 1)))
+        self.a_2 = nn.Parameter(torch.zeros(size=(out_features, 1)))
+        nn.init.xavier_uniform_(self.a_1.data, gain=1.414)
+        nn.init.xavier_uniform_(self.a_2.data, gain=1.414)
+
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
+
+    def forward(self, input, adj):
+        h = torch.mm(input, self.W)
+        N = h.size()[0]
+
+        eg= torch.matmul(h, self.a_2)
+        e_input_1= eg + torch.mm(h[self.hot_node_1, :], self.a_1)
+        e_input_2= eg + torch.mm(h[self.hot_node_2, :], self.a_1)
+        e= e_input_1 + e_input_2
+
+        e = self.leakyrelu(e)
+
+        attention = F.softmax(e, dim=1)
+        attention = F.dropout(attention, self.dropout, training=self.training)
+        h_sum = torch.matmul(torch.transpose(attention), h)
+
+        if self.concat:
+            return F.elu(h_sum), attention
+        else:
+            return h_sum, attention
+
+    def __repr__(self):
+        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+
+
 class SpecialSpmmFunction(torch.autograd.Function):
     """Special function for only sparse region backpropataion layer."""
     @staticmethod
