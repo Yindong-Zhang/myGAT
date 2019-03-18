@@ -41,7 +41,7 @@ if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
 # Load data
-adj, features, tags, labels, idx_train, idx_val, idx_test = load_data()
+adj, features, labels, idx_train, idx_val, idx_test = load_data()
 
 # Model and optimizer
 if args.sparse:
@@ -71,7 +71,7 @@ if args.cuda:
     idx_val = idx_val.cuda()
     idx_test = idx_test.cuda()
 
-features, tags, adj, labels = Variable(features), Variable(tags), Variable(adj), Variable(labels)
+features, adj, labels = Variable(features), Variable(adj), Variable(labels)
 
 
 def train(epoch):
@@ -81,38 +81,6 @@ def train(epoch):
     output = model(features, adj)
     loss_train = F.nll_loss(output[idx_train], labels[idx_train])
     acc_train = accuracy(output[idx_train], labels[idx_train])
-    loss_train.backward()
-    optimizer.step()
-
-    if not args.fastmode:
-        # Evaluate validation set performance separately,
-        # deactivates dropout during validation run.
-        model.eval()
-        output = model(features, adj)
-
-    loss_val = F.nll_loss(output[idx_val], labels[idx_val])
-    acc_val = accuracy(output[idx_val], labels[idx_val])
-    print('Epoch: {:04d}'.format(epoch+1),
-          'loss_train: {:.4f}'.format(loss_train.data[0]),
-          'acc_train: {:.4f}'.format(acc_train.data[0]),
-          'loss_val: {:.4f}'.format(loss_val.data[0]),
-          'acc_val: {:.4f}'.format(acc_val.data[0]),
-          'time: {:.4f}s'.format(time.time() - t))
-
-    return loss_val.data[0]
-
-
-def focusedtrain(epoch):
-    t = time.time()
-    model.train()
-    optimizer.zero_grad()
-    output, attention = model(features, adj)
-    acc_train = accuracy(output[idx_train], labels[idx_train])
-
-    pred_loss= F.nll_loss(output[idx_train], labels[idx_train])
-    resid= attention - tags
-    reg_loss= resid.norm()
-    loss_train= pred_loss + reg_loss
     loss_train.backward()
     optimizer.step()
 
