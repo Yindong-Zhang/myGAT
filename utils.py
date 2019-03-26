@@ -48,7 +48,7 @@ def load_data(path="./data/cora/", dataset="cora"):
 
 
 def normalize_adj(mx):
-    """Row-normalize sparse matrix"""\
+    """Row-normalize sparse matrix"""
     rowsum = np.array(mx.sum(1))
     r_inv_sqrt = np.power(rowsum, -0.5).flatten()
     r_inv_sqrt[np.isinf(r_inv_sqrt)] = 0.
