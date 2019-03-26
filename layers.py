@@ -44,6 +44,52 @@ class GraphAttentionLayer(nn.Module):
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
 
+class HigherOrderGraphAttentionLayer(nn.Module):
+    """
+    Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
+    """
+
+    def __init__(self, in_features, out_features, dropout, alpha):
+        super(HigherOrderGraphAttentionLayer, self).__init__()
+        self.dropout = dropout
+        self.in_features = in_features
+        self.out_features = out_features
+        self.alpha = alpha
+
+        self.W = nn.Parameter(torch.zeros(size=(in_features, out_features), dtype= torch.float))
+        nn.init.xavier_uniform_(self.W.data, gain=1.414)
+        self.a_1 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype= torch.float))
+        nn.init.xavier_uniform_(self.a_1.data, gain=1.414)
+        self.a_2 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype= torch.float))
+        nn.init.xavier_uniform_(self.a_2.data, gain=1.414)
+
+        self.W_xy= nn.Parameter(torch.zeros(size= (out_features, out_features)))
+        nn.init.xavier_uniform(self.W_xy.data, gain= 1.414)
+
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
+
+    def forward(self, input, adj):
+        h = torch.matmul(input, self.W)
+
+        Ax= torch.matmul(h, self.a_1)
+        Ay= torch.matmul(h, self.a_2)
+        A_xy= torch.chain_matmul(h, self.W_xy, h.permute(1, 0))
+        logits= Ax + Ay.permute(1, 0) + A_xy
+
+
+        e= self.leakyrelu(logits)
+        zero_vec = -9e15* e.new_tensor([1., ])
+        e = torch.where(adj > 0, e, zero_vec)
+
+        attention = F.softmax(e, dim= -1)
+        attention = F.dropout(attention, self.dropout, training=self.training)
+        h_out = torch.mm(attention, h)
+
+        return F.elu(h_out)
+
+    def __repr__(self):
+        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+
 class GraphDiffusedAttentionLayer(nn.Module):
     """
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
@@ -89,6 +135,65 @@ class GraphDiffusedAttentionLayer(nn.Module):
         h_out = torch.mm(attention, h_all)
 
         return F.elu(h_out)
+
+    def __repr__(self):
+        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+
+class ImprovedGraphAttentionLayer(nn.Module):
+    """
+    Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
+    """
+
+    def __init__(self, in_features, out_features, dropout, alpha):
+        super(ImprovedGraphAttentionLayer, self).__init__()
+        self.dropout = dropout
+        self.in_features = in_features
+        self.out_features = out_features
+        self.alpha = alpha
+
+        self.W= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W.data, gain=1.414)
+        self.W_1= nn.Parameter(torch.zeros(size=(out_features, out_features), ))
+        nn.init.xavier_uniform_(self.W_1.data, gain=1.414)
+
+        self.W_2 = nn.Parameter(torch.zeros(size=(out_features, out_features), ))
+        nn.init.xavier_uniform_(self.W_2.data, gain=1.414)
+
+        self.a_1 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
+        nn.init.xavier_uniform_(self.a_1.data, gain=1.414)
+        self.a_2 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
+        nn.init.xavier_uniform_(self.a_2.data, gain=1.414)
+
+        self.W_xy = nn.Parameter(torch.zeros(size=(out_features, out_features)))
+        nn.init.xavier_uniform_(self.W_xy.data, gain=1.414)
+
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
+
+    def forward(self, input, adj):
+        h = torch.matmul(input, self.W)
+
+        Ax = torch.matmul(h, self.a_1)
+        Ay = torch.matmul(h, self.a_2)
+        A_xy = torch.chain_matmul(h, self.W_xy, h.permute(1, 0))
+        logits = Ax + Ay.permute(1, 0) + A_xy
+
+        e = self.leakyrelu(logits)
+        zero_vec = -9e15 * e.new_tensor([1., ])
+        e = torch.where(adj > 0, e, zero_vec)
+
+        attention = F.softmax(e, dim=-1)
+        attention = F.dropout(attention, self.dropout, training=self.training)
+        # h_2 = torch.mm(attention, h)
+
+        h_1= torch.mm(h, self.W_1)
+        h_2= torch.chain_matmul(attention, h, self.W_2)
+        h_out= h_1 + h_2
+
+        return F.elu(h_out)
+
+    def __repr__(self):
+        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+
 
 
 class SpecialSpmmFunction(torch.autograd.Function):

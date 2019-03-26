@@ -29,7 +29,8 @@ def load_data(path="./data/cora/", dataset="cora"):
     adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
 
     features = normalize_features(features)
-    adj = normalize_adj(adj + sp.eye(adj.shape[0]))
+    # adj = adj + sp.eye(adj.shape[0])
+    # adj = normalize_adj(adj + sp.eye(adj.shape[0]))
 
     idx_train = range(140)
     idx_val = range(200, 500)
@@ -47,7 +48,7 @@ def load_data(path="./data/cora/", dataset="cora"):
 
 
 def normalize_adj(mx):
-    """Row-normalize sparse matrix"""
+    """Row-normalize sparse matrix"""\
     rowsum = np.array(mx.sum(1))
     r_inv_sqrt = np.power(rowsum, -0.5).flatten()
     r_inv_sqrt[np.isinf(r_inv_sqrt)] = 0.
@@ -71,3 +72,6 @@ def accuracy(output, labels):
     correct = correct.sum()
     return correct / len(labels)
 
+
+if __name__ == "__main__":
+    load_data()

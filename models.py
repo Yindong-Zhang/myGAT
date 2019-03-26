@@ -1,20 +1,25 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from layers import GraphDiffusedAttentionLayer, SpGraphAttentionLayer, GraphAttentionLayer
+from layers import GraphDiffusedAttentionLayer, SpGraphAttentionLayer, GraphAttentionLayer, HigherOrderGraphAttentionLayer, ImprovedGraphAttentionLayer
 
 
 class GAT(nn.Module):
-    def __init__(self, nfeat, nclass, dropout, alpha, nheads_list, nhid_list, att_diffused):
+    def __init__(self, nfeat, nclass, dropout, alpha, nheads_list, nhid_list, att_type):
         """Dense version of GAT."""
         super(GAT, self).__init__()
         self.dropout = dropout
-        self.att_diffused= att_diffused
+        self.att_type= att_type
 
-        if self.att_diffused:
+        if self.att_type == 'diffused':
             BaseLayer= GraphDiffusedAttentionLayer
-        else:
+        elif self.att_type == 'improved':
+            BaseLayer= ImprovedGraphAttentionLayer
+        elif self.att_type == None:
             BaseLayer= GraphAttentionLayer
+        else:
+            raise RuntimeError("model attention type not understood.")
+        print("Use attention type %s." %(BaseLayer, ))
 
         assert len(nheads_list) == len(nhid_list), "Length of nheads should be equal to length of nhidden list"
         nlayers= len(nheads_list)

@@ -35,6 +35,8 @@ parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leak
 parser.add_argument('--patience', type=int, default=100, help='Patience')
 parser.add_argument('--diffused_attention', action= 'store_true', default= False,
                     help= "Whether to use diffused attention in model")
+parser.add_argument('--improved_attention', action= 'store_true', default= False,
+                    help= "Whether to use improved attention in model")
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -48,6 +50,16 @@ if args.cuda:
 print(args)
 # Load data
 adj, features, labels, idx_train, idx_val, idx_test = load_data()
+
+att_type= None
+if args.diffused_attention and not args.improved_attention:
+    att_type= 'diffused'
+elif args.improved_attention and not args.diffused_attention:
+    att_type= 'improved'
+elif not args.improved_attention and not args.diffused_attention:
+    att_type= None
+else:
+    raise RuntimeError("Attention type hyperparameter not understood!!")
 
 # Model and optimizer
 if args.sparse:
@@ -65,7 +77,7 @@ else:
                     dropout=args.dropout,
                     nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4 ],
                     alpha=args.alpha,
-                    att_diffused= args.diffused_attention,
+                    att_type = att_type,
                     )
     elif args.nb_heads_3 and args.nb_heads_2 and not args.nb_heads_4:
         model = GAT(nfeat=features.shape[1],
@@ -74,7 +86,7 @@ else:
                     dropout=args.dropout,
                     nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, ],
                     alpha=args.alpha,
-                    att_diffused= args.diffused_attention,
+                    att_type= att_type,
                     )
     elif args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
         model = GAT(nfeat=features.shape[1],
@@ -83,7 +95,7 @@ else:
                     dropout=args.dropout,
                     nheads_list=[args.nb_heads_1, args.nb_heads_2],
                     alpha=args.alpha,
-                    att_diffused= args.diffused_attention,
+                    att_type= att_type,
                     )
     else:
         raise RuntimeError("Model hyperparameters not understood!!")
@@ -146,7 +158,7 @@ def compute_test():
 t_total = time.time()
 loss_values = []
 bad_counter = 0
-best = args.epochs + 1
+best = 1E9
 best_epoch = 0
 for epoch in range(args.epochs):
     loss_values.append(train(epoch))
