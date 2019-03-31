@@ -14,7 +14,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 
 from utils import load_data, accuracy
-from models import GAT, SpGAT
+from models import GAT, SpGAT, MultiLabelGAT
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -35,7 +35,7 @@ parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leak
 parser.add_argument('--patience', type=int, default=100, help='Patience')
 parser.add_argument('--diffused_attention', action= 'store_true', default= False,
                     help= "Whether to use diffused attention in model")
-parser.add_argument('--improved_attention', action= 'store_true', default= False,
+parser.add_argument('--improved_attention', action= 'store_true', default= True,
                     help= "Whether to use improved attention in model")
 
 args = parser.parse_args()
@@ -106,7 +106,10 @@ optimizer = optim.Adam(model.parameters(),
                        weight_decay=args.weight_decay)
 
 if args.cuda:
+    # devices= [0, 1]
     model.cuda()
+    # model= nn.DataParallel(model, device_ids= devices)
+
     features = features.cuda()
     adj = adj.cuda()
     labels = labels.cuda()
@@ -163,7 +166,7 @@ best_epoch = 0
 for epoch in range(args.epochs):
     loss_values.append(train(epoch))
 
-    torch.save(model.state_dict(), '{}.pkl'.format(epoch))
+    torch.save(model.state_dict(), './output/{}.pkl'.format(epoch))
     if loss_values[-1] < best:
         best = loss_values[-1]
         best_epoch = epoch
@@ -180,7 +183,7 @@ for epoch in range(args.epochs):
         if epoch_nb < best_epoch:
             os.remove(file)
 
-files = glob.glob('*.pkl')
+files = glob.glob('./ouput/*.pkl')
 for file in files:
     epoch_nb = int(file.split('.')[0])
     if epoch_nb > best_epoch:
@@ -191,7 +194,7 @@ print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
 # Restore best model
 print('Loading {}th epoch'.format(best_epoch))
-model.load_state_dict(torch.load('{}.pkl'.format(best_epoch)))
+model.load_state_dict(torch.load('./output/{}.pkl'.format(best_epoch)))
 
 # Testing
 compute_test()
