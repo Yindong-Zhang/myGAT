@@ -14,7 +14,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 
 from utils import load_data, accuracy
-from models import GAT, SpGAT, MultiLabelGAT
+from models import GAT, SpGAT
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -26,8 +26,8 @@ parser.add_argument('--epochs', type=int, default=10000, help='Number of epochs 
 parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--hidden', type=int, default=16, help='Number of hidden units.')
-parser.add_argument('--nb_heads_1', type=int, default=2, help='Number of head attentions in layer 1.')
-parser.add_argument('--nb_heads_2', type=int, default=2, help='Number of head attentions in layer 2.')
+parser.add_argument('--nb_heads_1', type=int, default= 4, help='Number of head attentions in layer 1.')
+parser.add_argument('--nb_heads_2', type=int, default= None, help='Number of head attentions in layer 2.')
 parser.add_argument('--nb_heads_3', type=int, default= None, help='Number of head attentions in layer 3.')
 parser.add_argument('--nb_heads_4', type=int, default= None, help='Number of head attentions in layer 4.')
 parser.add_argument('--dropout', type=float, default=0.6, help='Dropout rate (1 - keep probability).')
@@ -35,7 +35,7 @@ parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leak
 parser.add_argument('--patience', type=int, default=100, help='Patience')
 parser.add_argument('--diffused_attention', action= 'store_true', default= False,
                     help= "Whether to use diffused attention in model")
-parser.add_argument('--improved_attention', action= 'store_true', default= True,
+parser.add_argument('--improved_attention', action= 'store_true', default= False,
                     help= "Whether to use improved attention in model")
 
 args = parser.parse_args()
@@ -51,6 +51,16 @@ print(args)
 # Load data
 adj, features, labels, idx_train, idx_val, idx_test = load_data()
 
+# add batchsize axia
+adj         = adj[None, ...]
+features    = features[None, ...]
+labels      = labels[None, ...]
+
+# create node_mask tensor
+node_masks= torch.ones_like(labels)
+node_masks= node_masks[None, ...]
+
+
 att_type= None
 if args.diffused_attention and not args.improved_attention:
     att_type= 'diffused'
@@ -62,43 +72,44 @@ else:
     raise RuntimeError("Attention type hyperparameter not understood!!")
 
 # Model and optimizer
-if args.sparse:
-    model = SpGAT(nfeat=features.shape[1], 
-                nhid=args.hidden, 
-                nclass=int(labels.max()) + 1, 
-                dropout=args.dropout, 
-                nheads=args.nb_heads, 
-                alpha=args.alpha)
+if args.nb_heads_4 and args.nb_heads_3 and args.nb_heads_2:
+    model = GAT(nfeat=features.shape[-1],
+                nhid_list=[args.hidden, ] * 4,
+                nclass=int(labels.max()) + 1,
+                dropout=args.dropout,
+                nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4 ],
+                alpha=args.alpha,
+                att_type = att_type,
+                )
+elif args.nb_heads_3 and args.nb_heads_2 and not args.nb_heads_4:
+    model = GAT(nfeat=features.shape[-1],
+                nhid_list=[args.hidden, ] * 3,
+                nclass=int(labels.max()) + 1,
+                dropout=args.dropout,
+                nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, ],
+                alpha=args.alpha,
+                att_type= att_type,
+                )
+elif args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
+    model = GAT(nfeat=features.shape[-1],
+                nhid_list=[args.hidden, ] * 2,
+                nclass=int(labels.max()) + 1,
+                dropout=args.dropout,
+                nheads_list=[args.nb_heads_1, args.nb_heads_2],
+                alpha=args.alpha,
+                att_type= att_type,
+                )
+elif not args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
+    model= GAT(nfeat=features.shape[-1],
+                nhid_list=[args.hidden, ],
+                nclass=int(labels.max()) + 1,
+                dropout=args.dropout,
+                nheads_list=[args.nb_heads_1, ],
+                alpha=args.alpha,
+                att_type= att_type,
+                )
 else:
-    if args.nb_heads_4 and args.nb_heads_3 and args.nb_heads_2:
-        model = GAT(nfeat=features.shape[1],
-                    nhid_list=[args.hidden, ] * 4,
-                    nclass=int(labels.max()) + 1,
-                    dropout=args.dropout,
-                    nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4 ],
-                    alpha=args.alpha,
-                    att_type = att_type,
-                    )
-    elif args.nb_heads_3 and args.nb_heads_2 and not args.nb_heads_4:
-        model = GAT(nfeat=features.shape[1],
-                    nhid_list=[args.hidden, ] * 3,
-                    nclass=int(labels.max()) + 1,
-                    dropout=args.dropout,
-                    nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, ],
-                    alpha=args.alpha,
-                    att_type= att_type,
-                    )
-    elif args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
-        model = GAT(nfeat=features.shape[1],
-                    nhid_list=[args.hidden, ] * 2,
-                    nclass=int(labels.max()) + 1,
-                    dropout=args.dropout,
-                    nheads_list=[args.nb_heads_1, args.nb_heads_2],
-                    alpha=args.alpha,
-                    att_type= att_type,
-                    )
-    else:
-        raise RuntimeError("Model hyperparameters not understood!!")
+    raise RuntimeError("Model hyperparameters not understood!!")
 
 
 optimizer = optim.Adam(model.parameters(), 
@@ -113,20 +124,19 @@ if args.cuda:
     features = features.cuda()
     adj = adj.cuda()
     labels = labels.cuda()
+    node_masks = node_masks.cuda()
     idx_train = idx_train.cuda()
     idx_val = idx_val.cuda()
     idx_test = idx_test.cuda()
-
-features, adj, labels = Variable(features), Variable(adj), Variable(labels)
-
 
 def train(epoch):
     t = time.time()
     model.train()
     optimizer.zero_grad()
-    output = model(features, adj)
-    loss_train = F.nll_loss(output[idx_train], labels[idx_train])
-    acc_train = accuracy(output[idx_train], labels[idx_train])
+    output_logits = model(features, adj, node_masks)
+    output= F.log_softmax(output_logits, dim= -1)
+    loss_train = F.nll_loss(output[0, idx_train], labels[0, idx_train])
+    acc_train = accuracy(output[0, idx_train], labels[0, idx_train])
     loss_train.backward()
     optimizer.step()
 
@@ -134,10 +144,11 @@ def train(epoch):
         # Evaluate validation set performance separately,
         # deactivates dropout during validation run.
         model.eval()
-        output = model(features, adj)
+        output_logits = model(features, adj, node_masks)
+        output= F.log_softmax(output_logits, -1)
 
-    loss_val = F.nll_loss(output[idx_val], labels[idx_val])
-    acc_val = accuracy(output[idx_val], labels[idx_val])
+    loss_val = F.nll_loss(output[0, idx_val], labels[0, idx_val])
+    acc_val = accuracy(output[0, idx_val], labels[0, idx_val])
     print('Epoch: {:04d}'.format(epoch+1),
           'loss_train: {:.4f}'.format(loss_train.data.item()),
           'acc_train: {:.4f}'.format(acc_train.data.item()),
@@ -150,9 +161,10 @@ def train(epoch):
 
 def compute_test():
     model.eval()
-    output = model(features, adj)
-    loss_test = F.nll_loss(output[idx_test], labels[idx_test])
-    acc_test = accuracy(output[idx_test], labels[idx_test])
+    output_logits = model(features, adj, node_masks)
+    output= F.log_softmax(output_logits, dim= -1)
+    loss_test = F.nll_loss(output[0, idx_test], labels[0, idx_test])
+    acc_test = accuracy(output[0, idx_test], labels[0, idx_test])
     print("Test set results:",
           "loss= {:.4f}".format(loss_test.data.item()),
           "accuracy= {:.4f}".format(acc_test.data.item()))
@@ -177,16 +189,11 @@ for epoch in range(args.epochs):
     if bad_counter == args.patience:
         break
 
-    files = glob.glob('*.pkl')
-    for file in files:
-        epoch_nb = int(file.split('.')[0])
-        if epoch_nb < best_epoch:
-            os.remove(file)
-
 files = glob.glob('./ouput/*.pkl')
 for file in files:
-    epoch_nb = int(file.split('.')[0])
-    if epoch_nb > best_epoch:
+    filename= os.path.split(file)[-1]
+    epoch_nb = int(filename.split('.')[0])
+    if epoch_nb != best_epoch:
         os.remove(file)
 
 print("Optimization Finished!")

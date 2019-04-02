@@ -17,6 +17,8 @@ from utils import load_data, accuracy
 from models import GAT, SpGAT, MultiLabelGAT
 from process_ppi import load_p2p, create_data
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 # Training settings
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
@@ -24,20 +26,24 @@ parser.add_argument('--fastmode', action='store_true', default=False, help='Vali
 parser.add_argument('--seed', type=int, default=72, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=10000, help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
-parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay (L2 loss on parameters).')
-parser.add_argument('--hidden', type=int, default=16, help='Number of hidden units.')
-parser.add_argument('--nb_heads_1', type=int, default=2, help='Number of head attentions in layer 1.')
-parser.add_argument('--nb_heads_2', type=int, default=2, help='Number of head attentions in layer 2.')
+parser.add_argument('--weight_decay', type=float, default= 0, help='Weight decay (L2 loss on parameters).')
+parser.add_argument('--hidden', type=int, default= 128, help='Number of hidden units.')
+parser.add_argument('--nb_heads_1', type=int, default= 4, help='Number of head attentions in layer 1.')
+parser.add_argument('--nb_heads_2', type=int, default= None, help='Number of head attentions in layer 2.')
 parser.add_argument('--nb_heads_3', type=int, default= None, help='Number of head attentions in layer 3.')
 parser.add_argument('--nb_heads_4', type=int, default= None, help='Number of head attentions in layer 4.')
-parser.add_argument('--dropout', type=float, default=0.6, help='Dropout rate (1 - keep probability).')
+parser.add_argument('--nheads_last', type= int, default= 4,
+                    help= 'Number of heads in the last layer using means of their output for multilabel classification')
+parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leaky_relu.')
-parser.add_argument('--patience', type=int, default=100, help='Patience')
+parser.add_argument('--batch_size', type= int, default= 2,
+                    help= "Training batchsize for model")
+parser.add_argument('--patience', type=int, default=1000, help='Patience')
 parser.add_argument('--diffused_attention', action= 'store_true', default= False,
                     help= "Whether to use diffused attention in model")
 parser.add_argument('--improved_attention', action= 'store_true', default= False,
                     help= "Whether to use improved attention in model")
-parser.add_argument('--print_every', type= int, default= 2,
+parser.add_argument('--print_every', type= int, default= 1,
                     help= "Interval to print results.")
 
 args = parser.parse_args()
@@ -65,7 +71,7 @@ tr_msk, vl_msk, ts_msk = load_p2p('./data/ppi')
 # train_labels, val_labels, test_labels, \
 # train_nodes, val_nodes, test_nodes, \
 # tr_msk, vl_msk, ts_msk = create_data()
-
+#
 
 att_type= None
 if args.diffused_attention and not args.improved_attention:
@@ -87,6 +93,7 @@ if args.nb_heads_4 and args.nb_heads_3 and args.nb_heads_2:
                 dropout=args.dropout,
                 nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4 ],
                 alpha=args.alpha,
+                nheads_last= args.nheads_last,
                 att_type = att_type,
                 )
 elif args.nb_heads_3 and args.nb_heads_2 and not args.nb_heads_4:
@@ -95,6 +102,7 @@ elif args.nb_heads_3 and args.nb_heads_2 and not args.nb_heads_4:
                 nclass= nb_class,
                 dropout=args.dropout,
                 nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, ],
+                nheads_last=args.nheads_last,
                 alpha=args.alpha,
                 att_type= att_type,
                 )
@@ -104,9 +112,20 @@ elif args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
                 nclass= nb_class,
                 dropout=args.dropout,
                 nheads_list=[args.nb_heads_1, args.nb_heads_2],
+                nheads_last=args.nheads_last,
                 alpha=args.alpha,
                 att_type= att_type,
                 )
+elif not args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
+    model = MultiLabelGAT(nfeat=nb_features,
+                          nhid_list=[args.hidden, ],
+                          nclass=nb_class,
+                          dropout=args.dropout,
+                          nheads_list=[args.nb_heads_1, ],
+                          nheads_last=args.nheads_last,
+                          alpha=args.alpha,
+                          att_type=att_type,
+                          )
 else:
     raise RuntimeError("Model hyperparameters not understood!!")
 
@@ -120,15 +139,18 @@ optimizer = optim.Adam(model.parameters(),
                        weight_decay=args.weight_decay)
 
 
-def prepare_input(batch_graphs, gpu):
+def prepare_input(batch_graphs, batchsize, gpu):
     # restrict batchsize to 1
     batch_features, batch_adj, batch_labels, batch_nodes, batch_masks= batch_graphs
-    features, adj, labels= batch_features[:batch_nodes, :], batch_adj[:batch_nodes, :batch_nodes], batch_labels[:batch_nodes, :]
+    max_nodes= batch_adj.shape[-1]
+    # features, adj, labels= batch_features[:batch_nodes, :], batch_adj[:batch_nodes, :batch_nodes], batch_labels[:batch_nodes, :]
+    batch_adj[torch.eye(max_nodes).repeat(batchsize, 1, 1).byte()]= 1
     if gpu:
-        features= features.cuda()
-        adj= adj.cuda()
-        labels= labels.cuda()
-    return features, adj, labels
+        batch_features= batch_features.cuda()
+        batch_adj= batch_adj.cuda()
+        batch_labels= batch_labels.cuda()
+        batch_masks = batch_masks.cuda()
+    return batch_features, batch_adj, batch_masks, batch_labels
 
 
 def loop_dataset(dataset, classifier, criterion, optimizer=None, batchsize= 1, cuda= False, print_every= 5, shuffle= True):
@@ -145,7 +167,7 @@ def loop_dataset(dataset, classifier, criterion, optimizer=None, batchsize= 1, c
 
     # n_samples = 0
     for it in range(total_iters):
-        selected_idxes = sample_idxes[it]
+        selected_idxes = sample_idxes[it * batchsize : (it + 1) * batchsize]
 
         # restrict batchsize to 1
         batch_features  = features[selected_idxes]
@@ -155,9 +177,9 @@ def loop_dataset(dataset, classifier, criterion, optimizer=None, batchsize= 1, c
         batch_masks     = masks[selected_idxes]
 
         batch_graphs= (batch_features, batch_adj, batch_labels, batch_nodes, batch_masks)
-        batch_features, batch_adj, batch_labels= prepare_input(batch_graphs, cuda)
+        batch_features, batch_adj, batch_masks, batch_labels= prepare_input(batch_graphs, batchsize, cuda)
 
-        batch_logits= classifier(batch_features, batch_adj)
+        batch_logits= classifier(batch_features, batch_adj, batch_masks)
         loss = criterion(batch_logits, batch_labels)
 
         batch_prob= torch.sigmoid(batch_logits)
@@ -181,7 +203,7 @@ def loop_dataset(dataset, classifier, criterion, optimizer=None, batchsize= 1, c
         mean_loss= (it * mean_loss + loss ) / (it + 1)
         mean_acc= (it * mean_acc + acc ) / (it + 1)
         if it % print_every == 0:
-            print('mean_loss: %5.3f \t mean_acc: %5.3f \t %s \t %s' % (mean_loss, mean_acc, batch_pred[0, :8].cpu().numpy(), batch_labels[0, :8].cpu().numpy()))
+            print('mean_loss: %5.3f \t mean_acc: %5.3f \t %s \t %s' % (mean_loss, mean_acc, batch_pred[0, 0, :8].cpu().numpy(), batch_labels[0, 0, :8].cpu().numpy()))
 
     return mean_loss, mean_acc
 
@@ -200,11 +222,13 @@ bce_loss = torch.nn.BCEWithLogitsLoss()
 for epoch in range(args.epochs):
     print("Training epoch %s:" %(epoch, ))
     model.train()
-    train_loss, train_acc= loop_dataset(train_data, model, criterion= bce_loss, optimizer= optimizer, batchsize= 1, shuffle= True, cuda= args.cuda, print_every= args.print_every)
+    train_loss, train_acc= loop_dataset(train_data, model, criterion= bce_loss, optimizer= optimizer, batchsize= args.batch_size, shuffle= True, cuda= args.cuda, print_every= args.print_every)
+    print("Training epoch %s: \t loss: %.4f \t acc: %.4f.\n" %(epoch, train_loss, train_acc))
 
     print("Validation epoch %s:" %(epoch, ))
     model.eval()
-    val_loss, val_acc= loop_dataset(val_data, model, criterion= bce_loss, batchsize= 1, shuffle= False, cuda= args.cuda, print_every= args.print_every)
+    val_loss, val_acc= loop_dataset(val_data, model, criterion= bce_loss, batchsize= args.batch_size, shuffle= False, cuda= args.cuda, print_every= args.print_every)
+    print("Validation epoch %s: \t loss: %.4f \t acc: %.4f.\n" %(epoch, val_loss, val_acc))
     loss_values.append(val_loss)
 
     torch.save(model.state_dict(), './output/{}.pkl'.format(epoch))
@@ -220,7 +244,8 @@ for epoch in range(args.epochs):
 
 files = glob.glob('./ouput/*.pkl')
 for file in files:
-    epoch_nb = int(file.split('.')[0])
+    filename= os.path.split(file)[-1]
+    epoch_nb = int(filename.split('.')[0])
     if epoch_nb != best_epoch:
         os.remove(file)
 
@@ -231,5 +256,5 @@ print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 print('Loading {}th epoch'.format(best_epoch))
 model.load_state_dict(torch.load('./output/{}.pkl'.format(best_epoch)))
 model.eval()
-test_loss, test_acc = loop_dataset(test_data, model, criterion= bce_loss, batchsize=1, shuffle= False, cuda=args.cuda, print_every=args.print_every)
+test_loss, test_acc = loop_dataset(test_data, model, criterion= bce_loss, batchsize= args.batch_size, shuffle= False, cuda=args.cuda, print_every=args.print_every)
 print("Test graph results: \tmean loss: %.4f \tmean acc: %4f" %(test_loss, test_acc))

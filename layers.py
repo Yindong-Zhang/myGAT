@@ -9,7 +9,7 @@ class GraphAttentionLayer(nn.Module):
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
-    def __init__(self, in_features, out_features, dropout, alpha):
+    def __init__(self, in_features, out_features, dropout, alpha, activation):
         super(GraphAttentionLayer, self).__init__()
         self.dropout = dropout
         self.in_features = in_features
@@ -19,31 +19,38 @@ class GraphAttentionLayer(nn.Module):
         self.W = nn.Parameter(torch.zeros(size=(in_features, out_features), dtype= torch.float))
         nn.init.xavier_uniform_(self.W.data, gain=1.414)
         self.a_1 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype= torch.float))
-        nn.init.xavier_uniform_(self.a_1.data, gain=1.414)
+        nn.init.xavier_uniform_(self.a_1.data, gain=1) # how to choose a proper gain number
         self.a_2 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype= torch.float))
-        nn.init.xavier_uniform_(self.a_2.data, gain=1.414)
+        nn.init.xavier_uniform_(self.a_2.data, gain=1)
 
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
-    def forward(self, input, adj):
+        self.activation= activation
+
+    def forward(self, input, adj, nd_flags):
         h = torch.matmul(input, self.W)
 
         logit_1= torch.matmul(h, self.a_1)
         logit_2= torch.matmul(h, self.a_2)
-        logits= logit_1 + logit_2.permute(1, 0)
+        logits= logit_1 + logit_2.permute(0, 2, 1)
         e= self.leakyrelu(logits)
+
         zero_vec = -9e15* e.new_tensor([1., ])
-        e = torch.where(adj > 0, e, zero_vec)
-
-        attention = F.softmax(e, dim= -1)
+        attention = torch.where(adj > 0, e, zero_vec)
+        attention = F.softmax(attention, dim= -1)
+        # attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
         attention = F.dropout(attention, self.dropout, training=self.training)
-        h_out = torch.mm(attention, h)
+        h_out = torch.bmm(attention, h)
 
-        return F.elu(h_out)
+        if self.activation != None:
+            return self.activation(h_out)
+        else:
+            return h_out
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
 
+# TODO: change to batch training
 class GraphDiffusedAttentionLayer(nn.Module):
     """
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
@@ -99,7 +106,7 @@ class Order1GraphAttentionLayer(nn.Module):
     Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
-    def __init__(self, in_features, out_features, dropout, alpha):
+    def __init__(self, in_features, out_features, dropout, alpha, activation):
         super(Order1GraphAttentionLayer, self).__init__()
         self.dropout = dropout
         self.in_features = in_features
@@ -127,28 +134,37 @@ class Order1GraphAttentionLayer(nn.Module):
 
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
+        self.activation= activation
 
-    def forward(self, input, adj):
+
+    def forward(self, input, adj, nd_flags):
         h = torch.matmul(input, self.W)
 
         Ax = torch.matmul(h, self.a_1)
         Ay = torch.matmul(h, self.a_2)
-        A_xy = torch.chain_matmul(h, self.a_12, h.permute(1, 0))
-        logits = Ax + Ay.permute(1, 0) + A_xy
+        A_xy_1= torch.matmul(h, self.a_12)
+        A_xy= torch.matmul(A_xy_1, h.permute(0, 2, 1))
+        # A_xy = torch.chain_matmul(h, self.a_12, h.permute(1, 0))
+
+        Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
+        nd_flags_T= nd_flags.permute(0, 2, 1)
+        Ay_prime= torch.matmul(Ay, nd_flags_T)
+        logits = Ax_prime + Ay_prime + A_xy
 
         e = self.leakyrelu(logits)
         zero_vec = -9e15 * e.new_tensor([1., ])
         e = torch.where(adj > 0, e, zero_vec)
 
         attention = F.softmax(e, dim=-1)
+        attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
         attention = F.dropout(attention, self.dropout, training=self.training)
-        h_prime = torch.mm(attention, input)
+        h_prime = torch.matmul(attention, input)
 
-        h_1= torch.mm(input, self.W_1)
-        h_2= torch.mm(h_prime, self.W_2)
+        h_1= torch.matmul(input, self.W_1)
+        h_2= torch.matmul(h_prime, self.W_2)
         h_out= h_1 + h_2
 
-        return F.elu(h_out)
+        return self.activation(h_out)
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
@@ -160,7 +176,7 @@ class Order2GraphAttentionLayer(nn.Module):
     Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
-    def __init__(self, in_features, out_features, dropout, alpha):
+    def __init__(self, in_features, out_features, dropout, alpha, activation):
         super(Order2GraphAttentionLayer, self).__init__()
         self.dropout = dropout
         self.in_features = in_features
@@ -190,28 +206,37 @@ class Order2GraphAttentionLayer(nn.Module):
 
         self.bilinear= nn.Bilinear(in1_features= in_features, in2_features= in_features, out_features= out_features)
 
-    def forward(self, input, adj):
+        self.activation= activation
+
+    def forward(self, input, adj, nd_flags):
         h = torch.matmul(input, self.W)
 
         Ax = torch.matmul(h, self.a_1)
         Ay = torch.matmul(h, self.a_2)
-        A_xy = torch.chain_matmul(h, self.a_12, h.permute(1, 0))
-        logits = Ax + Ay.permute(1, 0) + A_xy
+        A_xy_1= torch.matmul(h, self.a_12)
+        A_xy= torch.matmul(A_xy_1, h.permute(0, 2, 1))
+        # A_xy = torch.chain_matmul(h, self.a_12, h.permute(1, 0))
+
+        Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
+        nd_flags_T= nd_flags.permute(0, 2, 1)
+        Ay_prime= torch.matmul(Ay, nd_flags_T)
+        logits = Ax_prime + Ay_prime + A_xy
 
         e = self.leakyrelu(logits)
         zero_vec = -9e15 * e.new_tensor([1., ])
         e = torch.where(adj > 0, e, zero_vec)
 
         attention = F.softmax(e, dim=-1)
+        attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
         attention = F.dropout(attention, self.dropout, training=self.training)
-        h_prime = torch.mm(attention, input)
+        h_prime = torch.matmul(attention, input)
 
-        h_1= torch.mm(input, self.W_1)
-        h_2= torch.mm(h_prime, self.W_2)
+        h_1= torch.matmul(input, self.W_1)
+        h_2= torch.matmul(h_prime, self.W_2)
         h_12= self.bilinear(input, h_prime)
         h_out= h_1 + h_2 + h_12
 
-        return F.elu(h_out)
+        return self.activation(h_out)
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
