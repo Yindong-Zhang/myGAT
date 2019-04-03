@@ -280,6 +280,11 @@ def save_p2p(datapath):
     train_nodes, val_nodes, test_nodes, \
     tr_msk, vl_msk, ts_msk = process_p2p(datapath)
 
+    # add new dimension in the last
+    tr_msk= tr_msk[..., np.newaxis]
+    vl_msk= vl_msk[..., np.newaxis]
+    ts_msk= ts_msk[..., np.newaxis]
+
     np.savez(os.path.join(datapath, 'train_ppi.npz'), **{'train_adj': train_adj, 'train_feat': train_feat, 'train_labels': train_labels, 'train_nodes': train_nodes, 'train_masks': tr_msk})
     np.savez(os.path.join(datapath, 'val_ppi.npz'), **{'val_adj': val_adj, 'val_feat': val_feat, 'val_labels': val_labels, 'val_nodes': val_nodes, 'val_masks': vl_msk})
     np.savez(os.path.join(datapath, 'test_ppi.npz'), **{'test_adj': test_adj, 'test_feat': test_feat, 'test_labels': test_labels, 'test_nodes': test_nodes, 'test_masks': ts_msk})

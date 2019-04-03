@@ -59,18 +59,18 @@ print(args)
 
 
 # Load data
-# train_adj, val_adj, test_adj, \
-# train_feat, val_feat, test_feat, \
-# train_labels, val_labels, test_labels, \
-# train_nodes, val_nodes, test_nodes, \
-# tr_msk, vl_msk, ts_msk = load_p2p('./data/ppi')
-#
-# load test data
 train_adj, val_adj, test_adj, \
 train_feat, val_feat, test_feat, \
 train_labels, val_labels, test_labels, \
 train_nodes, val_nodes, test_nodes, \
-tr_msk, vl_msk, ts_msk = create_data()
+tr_msk, vl_msk, ts_msk = load_p2p('./data/ppi')
+#
+# load test data
+# train_adj, val_adj, test_adj, \
+# train_feat, val_feat, test_feat, \
+# train_labels, val_labels, test_labels, \
+# train_nodes, val_nodes, test_nodes, \
+# tr_msk, vl_msk, ts_msk = create_data()
 #
 
 att_type= None
@@ -87,40 +87,44 @@ nb_features= train_feat.shape[-1]
 nb_class= train_labels.shape[-1]
 # Model and optimizer
 if args.nb_heads_4 and args.nb_heads_3 and args.nb_heads_2:
-    model = FullyConnectedGAT(nfeat=nb_features,
+    model = SumTailGAT(nfeat=nb_features,
                 nhid_list=[args.hidden, ] * 4,
                 nclass=nb_class,
                 dropout=args.dropout,
                 nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4 ],
+                nheads_last= args.nheads_last,
                 alpha=args.alpha,
                 att_type = att_type,
                 )
 elif args.nb_heads_3 and args.nb_heads_2 and not args.nb_heads_4:
-    model = FullyConnectedGAT(nfeat= nb_features,
+    model = SumTailGAT(nfeat= nb_features,
                 nhid_list=[args.hidden, ] * 3,
                 nclass= nb_class,
                 dropout=args.dropout,
                 nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, ],
-                alpha=args.alpha,
+                       nheads_last=args.nheads_last,
+                       alpha=args.alpha,
                 att_type= att_type,
                 )
 elif args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
-    model = FullyConnectedGAT(nfeat= nb_features,
+    model = SumTailGAT(nfeat= nb_features,
                 nhid_list=[args.hidden, ] * 2,
                 nclass= nb_class,
                 dropout=args.dropout,
                 nheads_list=[args.nb_heads_1, args.nb_heads_2],
-                alpha=args.alpha,
+                       nheads_last=args.nheads_last,
+                       alpha=args.alpha,
                 att_type= att_type,
                 )
 elif not args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
-    model = FullyConnectedGAT(nfeat=nb_features,
+    model = SumTailGAT(nfeat=nb_features,
                           nhid_list=[args.hidden, ],
                           nclass=nb_class,
                           dropout=args.dropout,
                           nheads_list=[args.nb_heads_1, ],
-                          alpha=args.alpha,
-                          att_type=att_type,
+                       nheads_last=args.nheads_last,
+                       alpha=args.alpha,
+                       att_type=att_type,
                           )
 else:
     raise RuntimeError("Model hyperparameters not understood!!")

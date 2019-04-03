@@ -144,7 +144,6 @@ class Order1GraphAttentionLayer(nn.Module):
         Ay = torch.matmul(h, self.a_2)
         A_xy_1= torch.matmul(h, self.a_12)
         A_xy= torch.matmul(A_xy_1, h.permute(0, 2, 1))
-        # A_xy = torch.chain_matmul(h, self.a_12, h.permute(1, 0))
 
         Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
         nd_flags_T= nd_flags.permute(0, 2, 1)
