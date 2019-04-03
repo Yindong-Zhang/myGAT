@@ -3,7 +3,6 @@ import os
 # import pdb
 import torch
 import sys
-from utils import normalize_features
 import networkx as nx
 import numpy as np
 import scipy.sparse as sp
@@ -288,11 +287,7 @@ def save_p2p(datapath):
 
 
 def load_p2p(datapath):
-    # train_adj, val_adj, test_adj, \
-    # train_feat, val_feat, test_feat, \
-    # train_labels, val_labels, test_labels, \
-    # train_nodes, val_nodes, test_nodes, \
-    # tr_msk, vl_msk, ts_msk = process_p2p(datapath)
+    print("Loading dataset p2p...")
     train_dict  = np.load(os.path.join(datapath, 'train_ppi.npz'))
     val_dict    = np.load(os.path.join(datapath, 'val_ppi.npz'))
     test_dict   = np.load(os.path.join(datapath, 'test_ppi.npz'))
@@ -301,7 +296,7 @@ def load_p2p(datapath):
     train_adj, val_adj, test_adj            = map(torch.FloatTensor, [train_dict['train_adj'], val_dict['val_adj'], test_dict['test_adj']])
     train_labels, val_labels, test_labels   = map(torch.FloatTensor, [train_dict['train_labels'], val_dict['val_labels'], test_dict['test_labels']])
     train_nodes, val_nodes, test_nodes      = map(torch.LongTensor, [train_dict['train_nodes'], val_dict['val_nodes'], test_dict['test_nodes']])
-    tr_msk, vl_msk, ts_msk                  = map(torch.LongTensor, [train_dict['train_masks'], val_dict['val_masks'], test_dict['test_masks']])
+    tr_msk, vl_msk, ts_msk                  = map(torch.FloatTensor, [train_dict['train_masks'], val_dict['val_masks'], test_dict['test_masks']])
     return train_adj, val_adj, test_adj, \
     train_feat, val_feat, test_feat, \
     train_labels, val_labels, test_labels, \
@@ -309,24 +304,25 @@ def load_p2p(datapath):
     tr_msk, vl_msk, ts_msk
 
 def create_data():
+    print("Create test data...")
     train_feat = 100 * torch.randn([20, 100, 50])
     train_adj  = torch.rand([20, 100, 100])
     train_labels= torch.randint(0, 2, [20, 100, 10], dtype= torch.float)
     train_nodes= torch.randint(10, 100, [20, ])
-    tr_msk     = torch.randint(0, 2, [20, 100])
+    tr_msk     = torch.randint(0, 2, [20, 100, 1], dtype= torch.float)
 
     val_feat   = 100 * torch.randn([4, 100, 50])
     val_adj    = torch.rand([4, 100, 100])
     val_labels  = torch.randint(0, 2, [4, 100, 10], dtype= torch.float)
     val_nodes  = torch.randint(10, 100, [4, ])
-    vl_msk     = torch.randint(0, 2, [4, 100])
+    vl_msk     = torch.randint(0, 2, [4, 100, 1], dtype= torch.float)
 
     test_feat = 100 * torch.randn([10, 100, 50])
     test_adj = torch.rand([10, 100, 100])
     # , dtype = torch.long
     test_labels = torch.randint(0, 2, [10, 100, 10], dtype= torch.float)
     test_nodes = torch.randint(10, 100, [10, ])
-    ts_msk = torch.randint(0, 2, [10, 100])
+    ts_msk = torch.randint(0, 2, [10, 100, 1], dtype= torch.float)
 
     return train_adj, val_adj, test_adj, \
     train_feat, val_feat, test_feat, \

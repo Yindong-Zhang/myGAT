@@ -156,7 +156,7 @@ class Order1GraphAttentionLayer(nn.Module):
         e = torch.where(adj > 0, e, zero_vec)
 
         attention = F.softmax(e, dim=-1)
-        attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
+        # attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
         attention = F.dropout(attention, self.dropout, training=self.training)
         h_prime = torch.matmul(attention, input)
 
@@ -164,7 +164,10 @@ class Order1GraphAttentionLayer(nn.Module):
         h_2= torch.matmul(h_prime, self.W_2)
         h_out= h_1 + h_2
 
-        return self.activation(h_out)
+        if not self.activation:
+            return self.activation(h_out)
+        else:
+            return h_out
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
@@ -227,7 +230,7 @@ class Order2GraphAttentionLayer(nn.Module):
         e = torch.where(adj > 0, e, zero_vec)
 
         attention = F.softmax(e, dim=-1)
-        attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
+        # attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
         attention = F.dropout(attention, self.dropout, training=self.training)
         h_prime = torch.matmul(attention, input)
 
@@ -236,7 +239,10 @@ class Order2GraphAttentionLayer(nn.Module):
         h_12= self.bilinear(input, h_prime)
         h_out= h_1 + h_2 + h_12
 
-        return self.activation(h_out)
+        if not self.activation:
+            return self.activation(h_out)
+        else:
+            return h_out
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'

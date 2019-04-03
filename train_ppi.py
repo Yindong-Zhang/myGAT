@@ -14,7 +14,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 
 from utils import load_data, accuracy
-from models import GAT, SpGAT, MultiLabelGAT
+from models import GAT, SpGAT, SumTailGAT, FullyConnectedGAT
 from process_ppi import load_p2p, create_data
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -39,9 +39,9 @@ parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leak
 parser.add_argument('--batch_size', type= int, default= 2,
                     help= "Training batchsize for model")
 parser.add_argument('--patience', type=int, default=1000, help='Patience')
-parser.add_argument('--diffused_attention', action= 'store_true', default= False,
+parser.add_argument('--order1_attention', action= 'store_true', default= False,
                     help= "Whether to use diffused attention in model")
-parser.add_argument('--improved_attention', action= 'store_true', default= False,
+parser.add_argument('--order2_attention', action= 'store_true', default= True,
                     help= "Whether to use improved attention in model")
 parser.add_argument('--print_every', type= int, default= 1,
                     help= "Interval to print results.")
@@ -59,26 +59,26 @@ print(args)
 
 
 # Load data
-train_adj, val_adj, test_adj, \
-train_feat, val_feat, test_feat, \
-train_labels, val_labels, test_labels, \
-train_nodes, val_nodes, test_nodes, \
-tr_msk, vl_msk, ts_msk = load_p2p('./data/ppi')
-#
-# load test data
 # train_adj, val_adj, test_adj, \
 # train_feat, val_feat, test_feat, \
 # train_labels, val_labels, test_labels, \
 # train_nodes, val_nodes, test_nodes, \
-# tr_msk, vl_msk, ts_msk = create_data()
+# tr_msk, vl_msk, ts_msk = load_p2p('./data/ppi')
+#
+# load test data
+train_adj, val_adj, test_adj, \
+train_feat, val_feat, test_feat, \
+train_labels, val_labels, test_labels, \
+train_nodes, val_nodes, test_nodes, \
+tr_msk, vl_msk, ts_msk = create_data()
 #
 
 att_type= None
-if args.diffused_attention and not args.improved_attention:
-    att_type= 'diffused'
-elif args.improved_attention and not args.diffused_attention:
-    att_type= 'improved'
-elif not args.improved_attention and not args.diffused_attention:
+if args.order1_attention and not args.order2_attention:
+    att_type= 'order1'
+elif args.order2_attention and not args.order1_attention:
+    att_type= 'order2'
+elif not args.order2_attention and not args.order1_attention:
     att_type= None
 else:
     raise RuntimeError("Attention type hyperparameter not understood!!")
@@ -87,42 +87,38 @@ nb_features= train_feat.shape[-1]
 nb_class= train_labels.shape[-1]
 # Model and optimizer
 if args.nb_heads_4 and args.nb_heads_3 and args.nb_heads_2:
-    model = MultiLabelGAT(nfeat=nb_features,
+    model = FullyConnectedGAT(nfeat=nb_features,
                 nhid_list=[args.hidden, ] * 4,
                 nclass=nb_class,
                 dropout=args.dropout,
                 nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4 ],
                 alpha=args.alpha,
-                nheads_last= args.nheads_last,
                 att_type = att_type,
                 )
 elif args.nb_heads_3 and args.nb_heads_2 and not args.nb_heads_4:
-    model = MultiLabelGAT(nfeat= nb_features,
+    model = FullyConnectedGAT(nfeat= nb_features,
                 nhid_list=[args.hidden, ] * 3,
                 nclass= nb_class,
                 dropout=args.dropout,
                 nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, ],
-                nheads_last=args.nheads_last,
                 alpha=args.alpha,
                 att_type= att_type,
                 )
 elif args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
-    model = MultiLabelGAT(nfeat= nb_features,
+    model = FullyConnectedGAT(nfeat= nb_features,
                 nhid_list=[args.hidden, ] * 2,
                 nclass= nb_class,
                 dropout=args.dropout,
                 nheads_list=[args.nb_heads_1, args.nb_heads_2],
-                nheads_last=args.nheads_last,
                 alpha=args.alpha,
                 att_type= att_type,
                 )
 elif not args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
-    model = MultiLabelGAT(nfeat=nb_features,
+    model = FullyConnectedGAT(nfeat=nb_features,
                           nhid_list=[args.hidden, ],
                           nclass=nb_class,
                           dropout=args.dropout,
                           nheads_list=[args.nb_heads_1, ],
-                          nheads_last=args.nheads_last,
                           alpha=args.alpha,
                           att_type=att_type,
                           )
@@ -186,7 +182,7 @@ def loop_dataset(dataset, classifier, criterion, optimizer=None, batchsize= 1, c
         batch_pred= (batch_prob > 0.5)
         batch_pred= batch_pred.float()
 
-        acc_item= torch.all(batch_pred.eq(batch_labels), dim= -1)
+        acc_item= batch_pred.eq(batch_labels)
         acc = torch.mean(acc_item.float())
 
         loss        = loss.mean()
