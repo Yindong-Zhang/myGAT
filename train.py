@@ -33,9 +33,9 @@ parser.add_argument('--nb_heads_4', type=int, default= None, help='Number of hea
 parser.add_argument('--dropout', type=float, default=0.6, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leaky_relu.')
 parser.add_argument('--patience', type=int, default=100, help='Patience')
-parser.add_argument('--diffused_attention', action= 'store_true', default= False,
+parser.add_argument('--order1_attention', action= 'store_true', default= True,
                     help= "Whether to use diffused attention in model")
-parser.add_argument('--improved_attention', action= 'store_true', default= False,
+parser.add_argument('--order2_attention', action= 'store_true', default= False,
                     help= "Whether to use improved attention in model")
 
 args = parser.parse_args()
@@ -62,11 +62,11 @@ node_masks= node_masks[None, ...]
 
 
 att_type= None
-if args.diffused_attention and not args.improved_attention:
-    att_type= 'diffused'
-elif args.improved_attention and not args.diffused_attention:
-    att_type= 'improved'
-elif not args.improved_attention and not args.diffused_attention:
+if args.order1_attention and not args.order2_attention:
+    att_type= 'order1'
+elif args.order2_attention and not args.order1_attention:
+    att_type= 'order2'
+elif not args.order2_attention and not args.order1_attention:
     att_type= None
 else:
     raise RuntimeError("Attention type hyperparameter not understood!!")
