@@ -165,9 +165,9 @@ class Order1GraphAttentionLayer(nn.Module):
         h_out= h_1 + h_2
 
         if not self.activation:
-            return self.activation(h_out)
-        else:
             return h_out
+        else:
+            return self.activation(h_out)
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
@@ -240,9 +240,9 @@ class Order2GraphAttentionLayer(nn.Module):
         h_out= h_1 + h_2 + h_12
 
         if not self.activation:
-            return self.activation(h_out)
-        else:
             return h_out
+        else:
+            return self.activation(h_out)
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'

@@ -13,8 +13,10 @@ class GAT(nn.Module):
 
         if self.att_type == 'diffused':
             BaseLayer= GraphDiffusedAttentionLayer
-        elif self.att_type == 'improved':
+        elif self.att_type == 'order2':
             BaseLayer= Order2GraphAttentionLayer
+        elif self.att_type == 'order1':
+            BaseLayer= Order1GraphAttentionLayer
         elif self.att_type == None:
             BaseLayer= GraphAttentionLayer
         else:
@@ -48,8 +50,10 @@ class SumTailGAT(nn.Module):
 
         if self.att_type == 'diffused':
             BaseLayer= GraphDiffusedAttentionLayer
-        elif self.att_type == 'improved':
+        elif self.att_type == 'order2':
             BaseLayer= Order2GraphAttentionLayer
+        elif self.att_type == 'order1':
+            BaseLayer= Order1GraphAttentionLayer
         elif self.att_type == None:
             BaseLayer= GraphAttentionLayer
         else:

@@ -39,9 +39,9 @@ parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leak
 parser.add_argument('--batch_size', type= int, default= 2,
                     help= "Training batchsize for model")
 parser.add_argument('--patience', type=int, default=1000, help='Patience')
-parser.add_argument('--order1_attention', action= 'store_true', default= False,
+parser.add_argument('--order1_attention', action= 'store_true', default= True,
                     help= "Whether to use diffused attention in model")
-parser.add_argument('--order2_attention', action= 'store_true', default= True,
+parser.add_argument('--order2_attention', action= 'store_true', default= False,
                     help= "Whether to use improved attention in model")
 parser.add_argument('--print_every', type= int, default= 1,
                     help= "Interval to print results.")
