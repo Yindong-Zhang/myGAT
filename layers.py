@@ -145,9 +145,11 @@ class Order1GraphAttentionLayer(nn.Module):
         A_xy_1= torch.matmul(h, self.a_12)
         A_xy= torch.matmul(A_xy_1, h.permute(0, 2, 1))
 
-        Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
-        nd_flags_T= nd_flags.permute(0, 2, 1)
-        Ay_prime= torch.matmul(Ay, nd_flags_T)
+        # Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
+        # nd_flags_T= nd_flags.permute(0, 2, 1)
+        # Ay_prime= torch.matmul(Ay, nd_flags_T)
+        Ax_prime= Ax.permute(0, 2, 1)
+        Ay_prime= Ay
         logits = Ax_prime + Ay_prime + A_xy
 
         e = self.leakyrelu(logits)
@@ -219,9 +221,11 @@ class Order2GraphAttentionLayer(nn.Module):
         A_xy= torch.matmul(A_xy_1, h.permute(0, 2, 1))
         # A_xy = torch.chain_matmul(h, self.a_12, h.permute(1, 0))
 
-        Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
-        nd_flags_T= nd_flags.permute(0, 2, 1)
-        Ay_prime= torch.matmul(Ay, nd_flags_T)
+        # Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
+        # nd_flags_T= nd_flags.permute(0, 2, 1)
+        # Ay_prime= torch.matmul(Ay, nd_flags_T)
+        Ax_prime= Ax.permute(0, 2, 1)
+        Ay_prime= Ay
         logits = Ax_prime + Ay_prime + A_xy
 
         e = self.leakyrelu(logits)

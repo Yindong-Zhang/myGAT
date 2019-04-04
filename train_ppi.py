@@ -17,11 +17,11 @@ from utils import load_data, accuracy
 from models import GAT, SpGAT, SumTailGAT, FullyConnectedGAT
 from process_ppi import load_p2p, create_data
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 # Training settings
 parser = argparse.ArgumentParser()
-parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
+parser.add_argument('--no_cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--fastmode', action='store_true', default=False, help='Validate during training pass.')
 parser.add_argument('--seed', type=int, default=72, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=10000, help='Number of epochs to train.')
@@ -39,7 +39,7 @@ parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leak
 parser.add_argument('--batch_size', type= int, default= 2,
                     help= "Training batchsize for model")
 parser.add_argument('--patience', type=int, default=1000, help='Patience')
-parser.add_argument('--order1_attention', action= 'store_true', default= True,
+parser.add_argument('--order1_attention', action= 'store_true', default= False,
                     help= "Whether to use diffused attention in model")
 parser.add_argument('--order2_attention', action= 'store_true', default= False,
                     help= "Whether to use improved attention in model")
@@ -64,7 +64,7 @@ train_feat, val_feat, test_feat, \
 train_labels, val_labels, test_labels, \
 train_nodes, val_nodes, test_nodes, \
 tr_msk, vl_msk, ts_msk = load_p2p('./data/ppi')
-#
+
 # load test data
 # train_adj, val_adj, test_adj, \
 # train_feat, val_feat, test_feat, \
@@ -130,9 +130,9 @@ else:
     raise RuntimeError("Model hyperparameters not understood!!")
 
 if args.cuda:
-    # devices= [0, 1]
+    devices= [0, 1]
     model.cuda()
-    # model= nn.DataParallel(model, device_ids= devices)
+    model= nn.DataParallel(model, device_ids= devices)
 
 optimizer = optim.Adam(model.parameters(),
                        lr=args.lr,
