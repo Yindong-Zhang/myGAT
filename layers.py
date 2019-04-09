@@ -3,13 +3,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class GraphAttentionLayer(nn.Module):
     """
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
-    def __init__(self, in_features, out_features, dropout, alpha, activation):
+    def __init__(self, in_features, out_features, dropout, alpha, activation, residual_connection = False):
         super(GraphAttentionLayer, self).__init__()
         self.dropout = dropout
         self.in_features = in_features
@@ -161,6 +160,7 @@ class Order1GraphAttentionLayer(nn.Module):
         attention = F.dropout(attention, self.dropout, training=self.training)
         h_prime = torch.matmul(attention, input)
 
+        # similar to residual connection here...
         h_1= torch.matmul(input, self.W_1)
         h_2= torch.matmul(h_prime, self.W_2)
         h_out= h_1 + h_2
