@@ -1,7 +1,9 @@
 import numpy as np
 import scipy.sparse as sp
 import torch
-
+import os, sys
+import pickle as pkl
+import networkx as nx
 
 def encode_onehot(labels):
     classes = set(labels)
@@ -9,9 +11,9 @@ def encode_onehot(labels):
     labels_onehot = np.array(list(map(classes_dict.get, labels)), dtype=np.int32)
     return labels_onehot
 
-
+"""
 def load_data(path="./data/cora/", dataset="cora"):
-    """Load citation network dataset (cora only for now)"""
+    "Load citation network dataset (cora only for now)"
     print('Loading {} dataset...'.format(dataset))
 
     idx_features_labels = np.genfromtxt("{}{}.content".format(path, dataset), dtype=np.dtype(str))
@@ -45,7 +47,66 @@ def load_data(path="./data/cora/", dataset="cora"):
     idx_test = torch.LongTensor(idx_test)
 
     return adj, features, labels, idx_train, idx_val, idx_test
+"""
 
+def parse_index_file(filename):
+    """Parse index file."""
+    index = []
+    for line in open(filename):
+        index.append(int(line.strip()))
+    return index
+
+
+def load_data(datapath, dataset): # {'pubmed', 'citeseer', 'cora'}
+    """Load data."""
+    names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
+    objects = []
+    for i in range(len(names)):
+        with open(os.path.join(datapath, "{}/ind.{}.{}".format(dataset, dataset, names[i])), 'rb') as f:
+            if sys.version_info > (3, 0):
+                objects.append(pkl.load(f, encoding='latin1'))
+            else:
+                objects.append(pkl.load(f))
+
+    x, y, tx, ty, allx, ally, graph = tuple(objects)
+    test_idx_reorder = parse_index_file(os.path.join(datapath, "{}/ind.{}.test.index".format(dataset, dataset)))
+    test_idx_range = np.sort(test_idx_reorder)
+
+    if dataset == 'citeseer':
+        # Fix citeseer dataset (there are some isolated nodes in the graph)
+        # Find isolated nodes, add them as zero-vecs into the right position
+        test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder)+1)
+        tx_extended = sp.lil_matrix((len(test_idx_range_full), x.shape[1]))
+        tx_extended[test_idx_range-min(test_idx_range), :] = tx
+        tx = tx_extended
+        ty_extended = np.zeros((len(test_idx_range_full), y.shape[1]))
+        ty_extended[test_idx_range-min(test_idx_range), :] = ty
+        ty = ty_extended
+
+    features = sp.vstack((allx, tx)).tolil()
+    features[test_idx_reorder, :] = features[test_idx_range, :]
+    adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
+
+    labels = np.vstack((ally, ty))
+    labels[test_idx_reorder, :] = labels[test_idx_range, :]
+
+    idx_test = test_idx_range.tolist()
+    idx_train = range(len(y))
+    idx_val = range(len(y), len(y)+500)
+
+    print(adj.shape)
+    print(features.shape)
+
+    adj = torch.FloatTensor(np.array(adj.todense()))
+    features = torch.FloatTensor(np.array(features.todense()))
+    labels = torch.LongTensor(np.where(labels)[1])
+
+    idx_train = torch.LongTensor(idx_train)
+    idx_val = torch.LongTensor(idx_val)
+    idx_test = torch.LongTensor(idx_test)
+
+
+    return adj, features, labels, idx_train, idx_val, idx_test
 
 def normalize_adj(mx):
     """Row-normalize sparse matrix"""
@@ -74,4 +135,4 @@ def accuracy(output, labels):
 
 
 if __name__ == "__main__":
-    load_data()
+    load_data('./data', 'pubmed')
