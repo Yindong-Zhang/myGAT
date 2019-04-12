@@ -13,12 +13,14 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 
-from utils import load_data, accuracy
+from dataset.make_dataset import get_dataset_and_split_planetoid, get_dataset, get_train_val_test_split
+from utils import accuracy
 from models import GAT, SpGAT
 
 # Training settings
 parser = argparse.ArgumentParser()
 parser.add_argument('--no_cuda', action='store_true', default=False, help='Disables CUDA training.')
+parser.add_argument('--gpu_ids', type= int, nargs= '+', default= [0, ], help= "Specify GPU ids to move model on.")
 parser.add_argument('--fastmode', action='store_true', default=False, help='Validate during training pass.')
 parser.add_argument('--sparse', action='store_true', default=False, help='GAT with sparse version or not.')
 parser.add_argument('--seed', type=int, default=72, help='Random seed.')
@@ -37,6 +39,7 @@ parser.add_argument('--order1_attention', action= 'store_true', default= True,
                     help= "Whether to use diffused attention in model")
 parser.add_argument('--order2_attention', action= 'store_true', default= False,
                     help= "Whether to use improved attention in model")
+parser.add_argument('--dataset', type= str, default= 'cora', help= "Dataset to use for training.")
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -48,8 +51,28 @@ if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
 print(args)
+
+configStr= "dataset~%s-hidden~%s-nheads_1~%s-nheads_2~%s-nheads_3~%s-nheads_4~%s-learning_rate~%s-weight_decay~%s-order1_attention~%s-order2_attention~%s-patience~%s" \
+    %(args.dataset, args.hidden, args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4, args.lr, args.weight_decay, args.order1_attention, args.order2_attention, args.patience)
+dump_dir = os.path.join('./output', configStr)
+if not os.path.exists(dump_dir):
+    os.makedirs(dump_dir)
+
 # Load data
-adj, features, labels, idx_train, idx_val, idx_test = load_data()
+# adj, features, labels, idx_train, idx_val, idx_test = get_dataset_and_split_planetoid(args.dataset, './data',)
+adj, features, labels = get_dataset(args.dataset, './data/npz/{}.npz'.format(args.dataset), standardize= True, train_examples_per_class= 40, val_examples_per_class= 100)
+random_state = np.random.RandomState(args.seed)
+idx_train, idx_val, idx_test = get_train_val_test_split(random_state, labels, train_examples_per_class= 40, val_examples_per_class= 80)
+
+# convert numpy/scipy to torch tensor
+adj = torch.FloatTensor(adj.todense())
+features = torch.FloatTensor(features.todense())
+# convert one-hot encoding back.
+labels = torch.LongTensor(np.where(labels)[1])
+
+idx_train = torch.LongTensor(idx_train)
+idx_val = torch.LongTensor(idx_val)
+idx_test = torch.LongTensor(idx_test)
 
 # add batchsize axia
 adj         = adj[None, ...]
@@ -111,15 +134,16 @@ elif not args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
 else:
     raise RuntimeError("Model hyperparameters not understood!!")
 
+print(model)
 
 optimizer = optim.Adam(model.parameters(), 
                        lr=args.lr, 
                        weight_decay=args.weight_decay)
 
 if args.cuda:
-    # devices= [0, 1]
+    devices= args.gpu_ids
     model.cuda()
-    # model= nn.DataParallel(model, device_ids= devices)
+    model= nn.DataParallel(model, device_ids= devices)
 
     features = features.cuda()
     adj = adj.cuda()
@@ -159,16 +183,6 @@ def train(epoch):
     return loss_val.data.item()
 
 
-def compute_test():
-    model.eval()
-    output_logits = model(features, adj, node_masks)
-    output= F.log_softmax(output_logits, dim= -1)
-    loss_test = F.nll_loss(output[0, idx_test], labels[0, idx_test])
-    acc_test = accuracy(output[0, idx_test], labels[0, idx_test])
-    print("Test set results:",
-          "loss= {:.4f}".format(loss_test.data.item()),
-          "accuracy= {:.4f}".format(acc_test.data.item()))
-
 # Train model
 t_total = time.time()
 loss_values = []
@@ -199,9 +213,24 @@ for file in files:
 print("Optimization Finished!")
 print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
+print("Model arguments: ")
+print(args)
+print(model)
+
 # Restore best model
 print('Loading {}th epoch'.format(best_epoch))
 model.load_state_dict(torch.load('./output/{}.pkl'.format(best_epoch)))
 
 # Testing
-compute_test()
+model.eval()
+output_logits = model(features, adj, node_masks)
+output = F.log_softmax(output_logits, dim=-1)
+loss_test = F.nll_loss(output[0, idx_test], labels[0, idx_test])
+acc_test = accuracy(output[0, idx_test], labels[0, idx_test])
+print("Test set results:",
+      "loss= {:.4f}".format(loss_test.data.item()),
+      "accuracy= {:.4f}".format(acc_test.data.item()))
+
+with open(os.path.join('./result', "%s.txt" %(configStr, )), 'a') as f:
+    f.write("Test graph results: \tmean loss: %.4f \tmean acc: %4f \n" %(loss_test, acc_test))
+

@@ -94,8 +94,8 @@ def load_data(datapath, dataset): # {'pubmed', 'citeseer', 'cora'}
     idx_train = range(len(y))
     idx_val = range(len(y), len(y)+500)
 
-    print(adj.shape)
-    print(features.shape)
+    print('Graph Shape: ', adj.shape)
+    print('Feature Shape: ', features.shape)
 
     adj = torch.FloatTensor(np.array(adj.todense()))
     features = torch.FloatTensor(np.array(features.todense()))
@@ -133,6 +133,11 @@ def accuracy(output, labels):
     correct = correct.sum()
     return correct / len(labels)
 
+def is_binary_bag_of_words(features):
+    features_coo = features.tocoo()
+    return all(single_entry == 1.0 for _, _, single_entry in zip(features_coo.row, features_coo.col, features_coo.data))
+
+
 
 if __name__ == "__main__":
-    load_data('./data', 'pubmed')
+    load_data('./data', 'cora')
