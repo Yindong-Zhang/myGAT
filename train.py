@@ -35,12 +35,15 @@ parser.add_argument('--nb_heads_4', type=int, default= None, help='Number of hea
 parser.add_argument('--dropout', type=float, default=0.6, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leaky_relu.')
 parser.add_argument('--patience', type=int, default=100, help='Patience')
-parser.add_argument('--order1_attention', action= 'store_true', default= True,
+parser.add_argument('--order1_attention', action= 'store_true', default= False,
                     help= "Whether to use diffused attention in model")
 parser.add_argument('--order2_attention', action= 'store_true', default= False,
                     help= "Whether to use improved attention in model")
 parser.add_argument('--dataset', type= str, default= 'cora', help= "Dataset to use for training.")
+parser.add_argument('--train_size', type= int, default= 20, help= "Size of training dataset.")
+parser.add_argument('--val_size', type= int, default= 20, help= "Size of validation dataset.")
 
+print('test')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -52,8 +55,8 @@ if args.cuda:
 
 print(args)
 
-configStr= "dataset~%s-hidden~%s-nheads_1~%s-nheads_2~%s-nheads_3~%s-nheads_4~%s-learning_rate~%s-weight_decay~%s-order1_attention~%s-order2_attention~%s-patience~%s" \
-    %(args.dataset, args.hidden, args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4, args.lr, args.weight_decay, args.order1_attention, args.order2_attention, args.patience)
+configStr= "dataset~%s-hidden~%s-nheads_1~%s-nheads_2~%s-nheads_3~%s-nheads_4~%s-learning_rate~%s-weight_decay~%s-dropout~%s-train_size~%s-val_size~%s-order1_attention~%s-order2_attention~%s-patience~%s" \
+    %(args.dataset, args.hidden, args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4, args.lr, args.weight_decay, args.dropout, args.train_size, args.val_size, args.order1_attention, args.order2_attention, args.patience)
 dump_dir = os.path.join('./output', configStr)
 if not os.path.exists(dump_dir):
     os.makedirs(dump_dir)
@@ -192,7 +195,7 @@ best_epoch = 0
 for epoch in range(args.epochs):
     loss_values.append(train(epoch))
 
-    torch.save(model.state_dict(), './output/{}.pkl'.format(epoch))
+    torch.save(model.state_dict(), os.path.join(dump_dir, '{}.pkl'.format(epoch)))
     if loss_values[-1] < best:
         best = loss_values[-1]
         best_epoch = epoch
@@ -203,7 +206,7 @@ for epoch in range(args.epochs):
     if bad_counter == args.patience:
         break
 
-files = glob.glob('./ouput/*.pkl')
+files = glob.glob(os.path.join(dump_dir, '*.pkl'))
 for file in files:
     filename= os.path.split(file)[-1]
     epoch_nb = int(filename.split('.')[0])
@@ -219,7 +222,7 @@ print(model)
 
 # Restore best model
 print('Loading {}th epoch'.format(best_epoch))
-model.load_state_dict(torch.load('./output/{}.pkl'.format(best_epoch)))
+model.load_state_dict(torch.load(os.path.join(dump_dir, '{}.pkl'.format(best_epoch))))
 
 # Testing
 model.eval()
