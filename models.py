@@ -33,12 +33,12 @@ class GAT(nn.Module):
                                               for _ in range(nheads_list[l]) ] ) )
         self.out_att = BaseLayer(nhid_list[-1] * nheads_list[-1], nclass, dropout=dropout, alpha=alpha, activation= lambda x: x)
 
-    def forward(self, x, adj, nd_flags):
+    def forward(self, x, adj):
         x = F.dropout(x, self.dropout, training=self.training)
         for layer in self.layers:
-            x = torch.cat([att(x, adj, nd_flags) for att in layer], dim= -1)
+            x = torch.cat([att(x, adj) for att in layer], dim= -1)
             x = F.dropout(x, self.dropout, training= self.training)
-        x = self.out_att(x, adj, nd_flags)
+        x = self.out_att(x, adj)
         return x
 
 class SumTailGAT(nn.Module):
@@ -70,12 +70,12 @@ class SumTailGAT(nn.Module):
                                               for _ in range(nheads_list[l]) ] ) )
         self.out_att = nn.ModuleList([BaseLayer(nhid_list[-1] * nheads_list[-1], nclass, dropout=dropout, alpha=alpha, activation= None) for _ in range(nheads_last)])
 
-    def forward(self, x, adj, nd_flags):
+    def forward(self, x, adj):
         x = F.dropout(x, self.dropout, training=self.training)
         for layer in self.layers:
-            x = torch.cat([att(x, adj, nd_flags) for att in layer], dim= -1)
+            x = torch.cat([att(x, adj) for att in layer], dim= -1)
             x = F.dropout(x, self.dropout, training= self.training)
-        x_list = [att(x, adj, nd_flags) for att in  self.out_att]
+        x_list = [att(x, adj) for att in  self.out_att]
         x= reduce(torch.add, x_list) / len(self.out_att)
 
         return x
@@ -109,10 +109,10 @@ class FullyConnectedGAT(nn.Module):
                                               for _ in range(nheads_list[l]) ] ) )
         self.linear= nn.Linear(nhid_list[-1] * nheads_list[-1], nclass)
 
-    def forward(self, x, adj, nd_flags):
+    def forward(self, x, adj):
         x = F.dropout(x, self.dropout, training=self.training)
         for layer in self.layers:
-            x = torch.cat([att(x, adj, nd_flags) for att in layer], dim= -1)
+            x = torch.cat([att(x, adj) for att in layer], dim= -1)
             x = F.dropout(x, self.dropout, training= self.training)
         x= self.linear(x)
         return x

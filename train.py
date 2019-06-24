@@ -11,21 +11,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.autograd import Variable
-
+from torch.utils.data import DataLoader
 from dataset.make_dataset import get_dataset_and_split_planetoid, get_dataset, get_train_val_test_split
-from utils import accuracy
+from utils import accuracy, load_reddit
 from models import GAT, SpGAT
 
 # Training settings
 parser = argparse.ArgumentParser()
 parser.add_argument('--no_cuda', action='store_true', default=False, help='Disables CUDA training.')
-parser.add_argument('--gpu_ids', type= int, nargs= '+', default= [0, ], help= "Specify GPU ids to move model on.")
+parser.add_argument('--gpu_ids', type= int, nargs= '+', default= [1, ], help= "Specify GPU ids to move model on.")
 parser.add_argument('--fastmode', action='store_true', default=False, help='Validate during training pass.')
 parser.add_argument('--sparse', action='store_true', default=False, help='GAT with sparse version or not.')
 parser.add_argument('--seed', type=int, default=72, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=10000, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.005, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--hidden', type=int, default=16, help='Number of hidden units.')
 parser.add_argument('--nb_heads_1', type=int, default= 4, help='Number of head attentions in layer 1.')
@@ -37,7 +36,7 @@ parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leak
 parser.add_argument('--patience', type=int, default=100, help='Patience')
 parser.add_argument('--order1_attention', action= 'store_true', default= False,
                     help= "Whether to use diffused attention in model")
-parser.add_argument('--order2_attention', action= 'store_true', default= False,
+parser.add_argument('--order2_attention', action= 'store_true', default= True,
                     help= "Whether to use improved attention in model")
 parser.add_argument('--dataset', type= str, default= 'cora', help= "Dataset to use for training.")
 parser.add_argument('--train_size', type= int, default= 20, help= "Size of training dataset.")
@@ -65,7 +64,7 @@ if not os.path.exists(dump_dir):
 # adj, features, labels, idx_train, idx_val, idx_test = get_dataset_and_split_planetoid(args.dataset, './data',)
 adj, features, labels = get_dataset(args.dataset, './data/npz/{}.npz'.format(args.dataset), standardize= True, train_examples_per_class= 40, val_examples_per_class= 100)
 random_state = np.random.RandomState(args.seed)
-idx_train, idx_val, idx_test = get_train_val_test_split(random_state, labels, train_examples_per_class= 40, val_examples_per_class= 80)
+idx_train, idx_val, idx_test = get_train_val_test_split(random_state, labels, train_examples_per_class= 20, val_examples_per_class= 80)
 
 # convert numpy/scipy to torch tensor
 adj = torch.FloatTensor(adj.todense())
@@ -160,7 +159,7 @@ def train(epoch):
     t = time.time()
     model.train()
     optimizer.zero_grad()
-    output_logits = model(features, adj, node_masks)
+    output_logits = model(features, adj)
     output= F.log_softmax(output_logits, dim= -1)
     loss_train = F.nll_loss(output[0, idx_train], labels[0, idx_train])
     acc_train = accuracy(output[0, idx_train], labels[0, idx_train])
@@ -171,7 +170,7 @@ def train(epoch):
         # Evaluate validation set performance separately,
         # deactivates dropout during validation run.
         model.eval()
-        output_logits = model(features, adj, node_masks)
+        output_logits = model(features, adj)
         output= F.log_softmax(output_logits, -1)
 
     loss_val = F.nll_loss(output[0, idx_val], labels[0, idx_val])
@@ -226,7 +225,7 @@ model.load_state_dict(torch.load(os.path.join(dump_dir, '{}.pkl'.format(best_epo
 
 # Testing
 model.eval()
-output_logits = model(features, adj, node_masks)
+output_logits = model(features, adj)
 output = F.log_softmax(output_logits, dim=-1)
 loss_test = F.nll_loss(output[0, idx_test], labels[0, idx_test])
 acc_test = accuracy(output[0, idx_test], labels[0, idx_test])

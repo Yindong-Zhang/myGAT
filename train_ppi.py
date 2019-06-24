@@ -22,18 +22,18 @@ from process_ppi import load_p2p, create_data
 # Training settings
 parser = argparse.ArgumentParser()
 parser.add_argument('--no_cuda', action='store_true', default=False, help='Disables CUDA training.')
-parser.add_argument('--gpu_ids', type= int, nargs= '+', default= [0, ], help= "Specify GPU ids to move model on.")
+parser.add_argument('--gpu_ids', type= int, nargs= '+', default= [0, 1], help= "Specify GPU ids to move model on.")
 parser.add_argument('--fastmode', action='store_true', default=False, help='Validate during training pass.')
 parser.add_argument('--seed', type=int, default=72, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=10000, help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default= 0, help='Weight decay (L2 loss on parameters).')
-parser.add_argument('--hidden', type=int, default= 128, help='Number of hidden units.')
+parser.add_argument('--hidden', type=int, default= 256, help='Number of hidden units.')
 parser.add_argument('--nb_heads_1', type=int, default= 4, help='Number of head attentions in layer 1.')
-parser.add_argument('--nb_heads_2', type=int, default= None, help='Number of head attentions in layer 2.')
-parser.add_argument('--nb_heads_3', type=int, default= None, help='Number of head attentions in layer 3.')
+parser.add_argument('--nb_heads_2', type=int, default= 4, help='Number of head attentions in layer 2.')
+parser.add_argument('--nb_heads_3', type=int, default= 4, help='Number of head attentions in layer 3.')
 parser.add_argument('--nb_heads_4', type=int, default= None, help='Number of head attentions in layer 4.')
-parser.add_argument('--nheads_last', type= int, default= 4,
+parser.add_argument('--nheads_last', type= int, default= 6,
                     help= 'Number of heads in the last layer using means of their output for multilabel classification')
 parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leaky_relu.')

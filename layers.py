@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.init as init
+import math
 
 class GraphAttentionLayer(nn.Module):
     """
@@ -26,7 +28,7 @@ class GraphAttentionLayer(nn.Module):
 
         self.activation= activation
 
-    def forward(self, input, adj, nd_flags):
+    def forward(self, input, adj):
         h = torch.matmul(input, self.W)
 
         logit_1= torch.matmul(h, self.a_1)
@@ -136,7 +138,7 @@ class Order1GraphAttentionLayer(nn.Module):
         self.activation= activation
 
 
-    def forward(self, input, adj, nd_flags):
+    def forward(self, input, adj):
         h = torch.matmul(input, self.W)
 
         Ax = torch.matmul(h, self.a_1)
@@ -173,14 +175,73 @@ class Order1GraphAttentionLayer(nn.Module):
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
 
+class SVDBilinear(nn.Module):
+    """
+    my bilinear matmul but reducing parameter dimension using peusodu-SVD
+    """
+    def __init__(self, num_basis, in1_features, in2_features, out_features):
+        super(SVDBilinear, self).__init__()
+        self.num_basis = num_basis
+        self.in1_features = in1_features
+        self.in2_features = in2_features
+        self.out_features = out_features
+        self.left_singular = nn.Parameter(torch.Tensor(out_features, in1_features, num_basis))
+        self.right_singular = nn.Parameter(torch.Tensor(out_features, num_basis, in2_features))
+        self.diag = nn.Parameter(torch.Tensor(out_features, 1, num_basis))
+        self.reset_parameter()
 
+    def reset_parameter(self):
+        init.xavier_uniform_(self.left_singular, gain = 1.414)
+        init.xavier_uniform_(self.right_singular, gain= 1.414)
+        init.normal_(self.diag, 0, 1/ math.sqrt(self.diag.size(-1)))
+
+    def forward(self, in1, in2):
+        us = self.left_singular * self.diag
+        usv = torch.matmul(us, self.right_singular)
+        return F.bilinear(in1, in2, weight= usv)
+
+    def __repr__(self):
+        return "SVDBilinear Layer: in1_features={}, in2_features={}, out_features={}, num_basis={}".format(
+            self.in1_features, self.in2_features, self.out_features, self.num_basis
+        )
+
+class EmbedBilinear(nn.Module):
+    """
+    binlinear module but reduce dimenion first to reduce complexity.
+    """
+    def __init__(self, embed_size, in1_features, in2_features, out_features, bias = False):
+        super(EmbedBilinear, self).__init__()
+        self.embed_size = embed_size
+        self.in1_features = in1_features
+        self.in2_features = in2_features
+        self.out_features = out_features
+        self.use_bias = bias
+        self.left_embed_layer = nn.Linear(in_features= in1_features, out_features = embed_size, bias = bias)
+        self.right_embed_layer = nn.Linear(in_features= in2_features, out_features = embed_size, bias = bias)
+        self.Bilinear = nn.Bilinear(in1_features= embed_size, in2_features = embed_size, out_featurs = out_features, bias= bias)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        self.left_embed_layer.reset_parameters()
+        self.right_embed_layer.reset_parameters()
+        self.Bilinear.reset_parameters()
+
+    def forward(self, in1, in2):
+        embed1 = self.left_embed_layer(in1)
+        embed2 = self.right_embed_layer(in2)
+        return self.Bilinear(embed1, embed2)
+
+    def __repr__(self):
+        return "EmbedBilinear Layer: in1_features={}, in2_features={}, out_features={}, embed_size={}".format(
+            self.in1_features, self.in2_features, self.out_features, self.embed_size
+        )
 
 class Order2GraphAttentionLayer(nn.Module):
     """
     Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
-    def __init__(self, in_features, out_features, dropout, alpha, activation):
+    def __init__(self, in_features, out_features, dropout, alpha, activation, num_basis = 5):
         super(Order2GraphAttentionLayer, self).__init__()
         self.dropout = dropout
         self.in_features = in_features
@@ -208,11 +269,11 @@ class Order2GraphAttentionLayer(nn.Module):
 
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
-        self.bilinear= nn.Bilinear(in1_features= in_features, in2_features= in_features, out_features= out_features)
+        self.bilinear= SVDBilinear(num_basis= num_basis, in1_features= in_features, in2_features= in_features, out_features= out_features)
 
         self.activation= activation
 
-    def forward(self, input, adj, nd_flags):
+    def forward(self, input, adj):
         h = torch.matmul(input, self.W)
 
         Ax = torch.matmul(h, self.a_1)
