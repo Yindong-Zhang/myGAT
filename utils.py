@@ -120,12 +120,38 @@ def load_reddit_in_networkx(prefix ="./data/reddit/reddit", normalize=True, load
     return G, feats, id_map, walks, class_map
 
 def load_reddit():
+    """
     G, features, id_map, walks, class_map = load_reddit_in_networkx()
     nodelist = sorted(id_map, key= lambda x: id_map[x])
     adj = nx.adjacency_matrix(G, nodelist)
     labels = np.array([class_map[node] for node in nodelist])
 
-    return adj, features, labels
+    val_nodes = [n for n in G.nodes() if G.node[n]['val']]
+    test_nodes = [n for n in G.nodes() if G.node[n]['test']]
+
+    no_train_nodes_set = set(val_nodes + test_nodes)
+    train_nodes = set(G.nodes()).difference(no_train_nodes_set)
+
+    val_inds = np.array([id_map[node] for node in val_nodes])
+    test_inds = np.array([id_map[node] for node in test_nodes])
+    train_inds = np.array([id_map[node] for node in train_nodes])
+
+    sp.save_npz("./data/reddit/sparse_adj.npz", adj)
+    np.save("./data/reddit/label.npy", labels)
+    np.savez("./data/reddit/train_val_test_indices.npz", val_inds = val_inds, test_inds = test_inds, train_inds = train_inds)
+    """
+    adj = sp.load_npz("./data/reddit/sparse_adj.npz")
+    features = np.load("./data/reddit/reddit-feats.npy")
+    labels = np.load("./data/reddit/label.npy")
+    # labels = encode_onehot(labels)
+
+    train_val_test = np.load("./data/reddit/train_val_test_indices.npz")
+    train_inds = train_val_test["train_inds"]
+    val_inds = train_val_test["val_inds"]
+    test_inds = train_val_test["test_inds"]
+
+
+    return adj, features, labels, train_inds, val_inds, test_inds
 
 def load_data(datapath, dataset): # {'pubmed', 'citeseer', 'cora'}
     """Load data."""
@@ -211,4 +237,4 @@ def is_binary_bag_of_words(features):
 
 if __name__ == "__main__":
     # load_data('./data', 'cora')
-    load_reddit_in_networkx()
+    load_reddit()

@@ -269,7 +269,7 @@ class Order2GraphAttentionLayer(nn.Module):
 
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
-        self.bilinear= SVDBilinear(num_basis= num_basis, in1_features= in_features, in2_features= in_features, out_features= out_features)
+        self.bilinear= EmbedBilinear(num_basis= num_basis, in1_features= in_features, in2_features= in_features, out_features= out_features)
 
         self.activation= activation
 

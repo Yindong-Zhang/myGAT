@@ -56,6 +56,18 @@ def get_train_val_test_split(random_state,
                              train_examples_per_class=None, val_examples_per_class=None,
                              test_examples_per_class=None,
                              train_size=None, val_size=None, test_size=None):
+    """
+
+    :param random_state:
+    :param labels: suppose label in one hot format
+    :param train_examples_per_class:
+    :param val_examples_per_class:
+    :param test_examples_per_class:
+    :param train_size:
+    :param val_size:
+    :param test_size:
+    :return:
+    """
     num_samples, num_classes = labels.shape
     remaining_indices = list(range(num_samples))
 
@@ -133,6 +145,7 @@ def sample_per_class(random_state, labels, num_examples_per_class, forbidden_ind
                 if forbidden_indices is None or sample_index not in forbidden_indices:
                     sample_indices_per_class[class_index].append(sample_index)
 
+    print("%s per class will be selected out of %s samples" %(num_examples_per_class, [len(sample_indices_per_class[cls]) for cls in sample_indices_per_class]))
     # get specified number of indices for each class
     return np.concatenate(
         [random_state.choice(sample_indices_per_class[class_index], num_examples_per_class, replace=False)

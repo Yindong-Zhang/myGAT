@@ -2,8 +2,11 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import default_collate
 from collections import deque
 from dataset.make_dataset import get_dataset
+import torch
 import numpy as np
+
 import random
+
 def bfs(start, adj, distance):
     """
 
@@ -79,8 +82,8 @@ class SubGraph(Dataset):
         """
 
         :param adj: suppose adj a sparse adjacent matrix
-        :param features:
-        :param labels:
+        :param features: a numpy array in shape (num_nodes, num_features)
+        :param labels: a numpy array in shape (num_nodes, 1) if not multi label task.
         :param num_layers:
         """
         self.adj = adj
@@ -96,7 +99,8 @@ class SubGraph(Dataset):
         nodelist = bfs_sample(node, self.adj, self.num_layers, self.num_samples)
         min_adj = self.adj[nodelist][:, nodelist]
         min_features = self.features[nodelist]
-        min_label = self.labels[node]
+        min_label = self.labels[node:node + 1]
+
         return (min_adj, min_features), min_label
 
     def __len__(self):
@@ -124,6 +128,11 @@ def align(data_tuple, max_nodes):
     adj_fill = adj.toarray()
     features_fill = np.zeros((max_nodes, features.shape[1]), )
     features_fill[:features.shape[0]] = features
+
+    # convert numpy/scipy to torch tensor
+    adj_fill = torch.FloatTensor(adj_fill)
+    features_fill = torch.FloatTensor(features_fill)
+    label = torch.LongTensor(label)
     return (adj_fill, features_fill), label
 
 if __name__ == "__main__":
@@ -131,16 +140,15 @@ if __name__ == "__main__":
     # adj, features, labels = get_dataset(data_name, './data/npz/{}.npz'.format(data_name), standardize=True,
     #                                     train_examples_per_class=40, val_examples_per_class=100)
     # features = features.toarray()
-    from utils import load_reddit_in_networkx
-    import networkx as nx
-    G, features, id_map, walks, class_map = load_reddit_in_networkx()
-    nodelist = sorted(id_map, key= lambda x: id_map[x])
-    adj = nx.adjacency_matrix(G, nodelist)
-    labels = [class_map[node] for node in nodelist]
+    from utils import load_reddit
+    adj, features, labels, idx_train, idx_val, idx_test = load_reddit()
+
     # %%
-    subgraph = SubGraph(adj, features, labels, np.arange(adj.shape[0]), 3, [25, 10, 5])
+    subgraph = SubGraph(adj, features, labels, np.arange(adj.shape[0]), 2, [25, 10])
     dataloader = DataLoader(subgraph, batch_size = 2, num_workers= 4, collate_fn= custom_collate)
     # %%
-    for data in dataloader:
+    for i, data in enumerate(dataloader):
         (min_adj, min_feat), label = data
-        print(min_adj.shape, min_feat.shape, label)
+        print(min_adj.shape, min_feat.shape, label.shape)
+        if i > 20:
+            break
