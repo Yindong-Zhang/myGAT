@@ -5,12 +5,57 @@ import torch.nn.functional as F
 import torch.nn.init as init
 import math
 
-class GraphAttentionLayer(nn.Module):
+class GraphConvolutionLayer(nn.Module):
+    """
+    Base graph convolution layer.
+    """
+    def __init__(self):
+        super(GraphConvolutionLayer, self).__init__()
+        pass
+
+    def forward(self, feat, adj):
+        """
+        a overview of logic, can be override
+        :param adj:
+        :param feat:
+        :return:
+        """
+        h_prime = self._aggregate(feat, adj)
+        return self._update(feat, h_prime)
+
+    def _aggregate(self, feat, adj):
+        print("Unimplemented!")
+
+    def _update(self, feat, feat_prime):
+        print("Unimplemented!")
+
+class BaseGraphAttentionLayer(GraphConvolutionLayer):
+    def __init__(self):
+        super(BaseGraphAttentionLayer, self).__init__()
+        pass
+
+    def _attention(self, feat, adj):
+        print("Unimplemented!")
+
+    def _aggregate(self, feat, adj):
+        """
+        a overview of logic, can be override.
+        :param adj: 
+        :param feat: 
+        :return: 
+        """
+        weight = self._attention(feat, adj)
+        h_prime = torch.matmul(weight, feat)
+        return h_prime
+
+
+
+class GraphAttentionLayer(BaseGraphAttentionLayer):
     """
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
-    def __init__(self, in_features, out_features, dropout, alpha, activation, residual_connection = False):
+    def __init__(self, in_features, out_features, dropout, alpha, activation, residual_connection = False, num_basis= True):
         super(GraphAttentionLayer, self).__init__()
         self.dropout = dropout
         self.in_features = in_features
@@ -28,8 +73,7 @@ class GraphAttentionLayer(nn.Module):
 
         self.activation= activation
 
-    def forward(self, input, adj):
-        h = torch.matmul(input, self.W)
+    def _attention(self, h, adj):
 
         logit_1= torch.matmul(h, self.a_1)
         logit_2= torch.matmul(h, self.a_2)
@@ -39,16 +83,30 @@ class GraphAttentionLayer(nn.Module):
         zero_vec = -9e15* e.new_tensor([1., ])
         attention = torch.where(adj > 0, e, zero_vec)
         attention = F.softmax(attention, dim= -1)
-        # attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
+        return attention
+
+    def _aggregate(self, feat, adj):
+        h = torch.matmul(feat, self.W)
+        attention = self._attention(h, adj)
         attention = F.dropout(attention, self.dropout, training=self.training)
+
         h_out = torch.bmm(attention, h)
+        return h_out
+
+    def _update(self, feat, feat_prime):
+        return feat_prime
+
+
+    def forward(self, input, adj):
+        h_prime = self._aggregate(input, adj)
+        h_out = self._update(input, h_prime)
 
         if self.activation != None:
             return self.activation(h_out)
         else:
             return h_out
 
-    def __repr__(self):
+    def extra_repr(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
 
 # TODO: change to batch training
@@ -107,7 +165,7 @@ class Order1GraphAttentionLayer(nn.Module):
     Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
-    def __init__(self, in_features, out_features, dropout, alpha, activation):
+    def __init__(self, in_features, out_features, dropout, alpha, activation, num_basis = 5):
         super(Order1GraphAttentionLayer, self).__init__()
         self.dropout = dropout
         self.in_features = in_features
@@ -172,7 +230,7 @@ class Order1GraphAttentionLayer(nn.Module):
         else:
             return self.activation(h_out)
 
-    def __repr__(self):
+    def extra_repr(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
 
 class SVDBilinear(nn.Module):
@@ -218,7 +276,7 @@ class EmbedBilinear(nn.Module):
         self.use_bias = bias
         self.left_embed_layer = nn.Linear(in_features= in1_features, out_features = embed_size, bias = bias)
         self.right_embed_layer = nn.Linear(in_features= in2_features, out_features = embed_size, bias = bias)
-        self.Bilinear = nn.Bilinear(in1_features= embed_size, in2_features = embed_size, out_featurs = out_features, bias= bias)
+        self.Bilinear = nn.Bilinear(in1_features= embed_size, in2_features = embed_size, out_features = out_features, bias= bias)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -236,17 +294,67 @@ class EmbedBilinear(nn.Module):
             self.in1_features, self.in2_features, self.out_features, self.embed_size
         )
 
-class Order2GraphAttentionLayer(nn.Module):
+class BiInteractionLayer(nn.Module):
+    def __init__(self, in1_features, in2_features, out_features, embed_size, intermediate_size= None, activation = F.relu, use_bias = True):
+        """
+
+        :param in1_features:
+        :param in2_features:
+        :param out_features:
+        :param embed_size: embed size specific embedding vector size of input features
+        :param intermediate: a list specify intermediate size in mlp
+        """
+        super(BiInteractionLayer, self).__init__()
+        self.in1_features= in1_features
+        self.in2_features = in2_features
+        self.out_features = out_features
+        self.embed_size = embed_size
+        self.embed_layer_1 = nn.Linear(in1_features, embed_size, bias = True)
+        self.embed_layer_2 = nn.Linear(in2_features, embed_size, bias = True)
+        self.activation = activation
+        self.bias= use_bias
+        self.interaction = nn.ModuleList()
+        if not intermediate_size:
+            self.interaction.append(nn.Linear(embed_size * 2, out_features, bias= True))
+        else:
+            self.interaction.append(nn.Linear(embed_size * 2, intermediate_size[0], bias= True))
+            for i in range(1, len(intermediate_size)):
+                self.interaction.append(nn.Linear(intermediate_size[i - 1], intermediate_size[i], bias= True))
+            self.interaction.append(nn.Linear(intermediate_size[-1], out_features, bias= True))
+
+            self.num_layers= len(self.interaction)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        self.embed_layer_1.reset_parameters()
+        self.embed_layer_2.reset_parameters()
+        for layer in self.interaction:
+            layer.reset_parameters()
+
+    def forward(self, in1, in2):
+        embed1 = self.activation(self.embed_layer_1(in1))
+        embed2 = self.activation(self.embed_layer_2(in2))
+        embed_concat = torch.cat([embed1, embed2], -1)
+        for layer in self.interaction:
+            embed_concat = self.activation(layer(embed_concat))
+        return embed_concat
+
+    def extra_repr(self):
+        return "Multi-layer perception: in1_features: %s, in2_features: %s, out_features: %s, bias: %s, layers: %s, activation: %s" \
+    %(self.in1_features, self.in2_features, self.out_features, self.bias, self.num_layers, self.activation)
+
+class MLPGraphAttentionLayer(BaseGraphAttentionLayer):
     """
     Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
     def __init__(self, in_features, out_features, dropout, alpha, activation, num_basis = 5):
-        super(Order2GraphAttentionLayer, self).__init__()
+        super(MLPGraphAttentionLayer, self).__init__()
         self.dropout = dropout
         self.in_features = in_features
         self.out_features = out_features
         self.alpha = alpha
+        self.num_basis = num_basis
 
         self.W= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
         nn.init.xavier_uniform_(self.W.data, gain=1.414)
@@ -269,7 +377,180 @@ class Order2GraphAttentionLayer(nn.Module):
 
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
-        self.bilinear= EmbedBilinear(num_basis= num_basis, in1_features= in_features, in2_features= in_features, out_features= out_features)
+        self.biInteraction= BiInteractionLayer(in1_features= in_features, in2_features= in_features, out_features= out_features,
+                                               embed_size= int(math.sqrt(in_features)), intermediate_size= [out_features, ],
+                                               activation= self.leakyrelu)
+
+        self.activation= activation
+
+    def _attention(self, feat, adj):
+        h = torch.matmul(feat, self.W)
+
+        Ax = torch.matmul(h, self.a_1)
+        Ay = torch.matmul(h, self.a_2)
+        A_xy_1= torch.matmul(h, self.a_12)
+        A_xy= torch.matmul(A_xy_1, h.permute(0, 2, 1))
+        # A_xy = torch.chain_matmul(h, self.a_12, h.permute(1, 0))
+
+        # Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
+        # nd_flags_T= nd_flags.permute(0, 2, 1)
+        # Ay_prime= torch.matmul(Ay, nd_flags_T)
+        Ax_prime= Ax.permute(0, 2, 1)
+        Ay_prime= Ay
+        logits = Ax_prime + Ay_prime + A_xy
+
+        e = self.leakyrelu(logits)
+        zero_vec = -9e15 * e.new_tensor([1., ])
+        e = torch.where(adj > 0, e, zero_vec)
+
+        attention = F.softmax(e, dim=-1)
+        # attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
+        attention = F.dropout(attention, self.dropout, training=self.training)
+        return attention
+
+    def _aggregate(self, feat, adj):
+        attention = self._attention(feat, adj)
+        h_prime = torch.matmul(attention, feat)
+        return h_prime
+
+    def _update(self, feat, feat_prime):
+        h_out = self.biInteraction(feat, feat_prime)
+        return h_out
+
+    def forward(self, feat, adj):
+        feat_prime = self._aggregate(feat, adj)
+        h_out = self._update(feat, feat_prime)
+        if not self.activation:
+            return h_out
+        else:
+            return self.activation(h_out)
+
+    def extra_repr(self):
+        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+
+class Order2GraphAttentionLayer(nn.Module):
+    """
+    Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
+    """
+
+    def __init__(self, in_features, out_features, dropout, alpha, activation, num_basis = 5):
+        super(Order2GraphAttentionLayer, self).__init__()
+        self.dropout = dropout
+        self.in_features = in_features
+        self.out_features = out_features
+        self.alpha = alpha
+        self.num_basis = num_basis
+
+        self.W= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W.data, gain=1.414)
+        self.W_1= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W_1.data, gain=1.414)
+
+        self.W_2 = nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W_2.data, gain=1.414)
+
+        self.a_1 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
+        nn.init.xavier_uniform_(self.a_1.data, gain=1.414)
+        self.a_2 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
+        nn.init.xavier_uniform_(self.a_2.data, gain=1.414)
+
+        self.a_12 = nn.Parameter(torch.zeros(size=(out_features, out_features)))
+        nn.init.xavier_uniform_(self.a_12.data, gain=1.414)
+
+        self.W_xy= nn.Parameter(torch.zeros(size= (out_features, 1)))
+        nn.init.xavier_uniform_(self.W_xy.data, gain= 1.414)
+
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
+
+        self.bilinear= EmbedBilinear(num_basis, in1_features= in_features, in2_features= in_features, out_features= out_features)
+
+        self.activation= activation
+
+    def _attention(self, feat, adj):
+        h = torch.matmul(feat, self.W)
+
+        Ax = torch.matmul(h, self.a_1)
+        Ay = torch.matmul(h, self.a_2)
+        A_xy_1= torch.matmul(h, self.a_12)
+        A_xy= torch.matmul(A_xy_1, h.permute(0, 2, 1))
+        # A_xy = torch.chain_matmul(h, self.a_12, h.permute(1, 0))
+
+        # Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
+        # nd_flags_T= nd_flags.permute(0, 2, 1)
+        # Ay_prime= torch.matmul(Ay, nd_flags_T)
+        Ax_prime= Ax.permute(0, 2, 1)
+        Ay_prime= Ay
+        logits = Ax_prime + Ay_prime + A_xy
+
+        e = self.leakyrelu(logits)
+        zero_vec = -9e15 * e.new_tensor([1., ])
+        e = torch.where(adj > 0, e, zero_vec)
+
+        attention = F.softmax(e, dim=-1)
+        # attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
+        attention = F.dropout(attention, self.dropout, training=self.training)
+        return attention
+
+    def _aggregate(self, feat, adj):
+        attention = self._attention(feat, adj)
+        h_prime = torch.matmul(attention, feat)
+        return h_prime
+
+    def _update(self, feat, feat_agg):
+        h_1= torch.matmul(feat, self.W_1)
+        h_2= torch.matmul(feat_agg, self.W_2)
+        h_12= self.bilinear(feat, feat_agg)
+        h_out= h_1 + h_2 + h_12
+        if not self.activation:
+            return h_out
+        else:
+            return self.activation(h_out)
+
+        return h_out
+
+    def forward(self, feat, adj):
+        feat_agg = self._aggregate(feat, adj)
+        return self._update(feat, feat_agg)
+
+    def extra_repr(self):
+        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+
+"""
+class Order2GraphAttentionLayer(nn.Module):
+    ""
+    Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
+    ""
+
+    def __init__(self, in_features, out_features, dropout, alpha, activation, num_basis = 5):
+        super(Order2GraphAttentionLayer, self).__init__()
+        self.dropout = dropout
+        self.in_features = in_features
+        self.out_features = out_features
+        self.alpha = alpha
+        self.num_basis = num_basis
+
+        self.W= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W.data, gain=1.414)
+        self.W_1= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W_1.data, gain=1.414)
+
+        self.W_2 = nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W_2.data, gain=1.414)
+
+        self.a_1 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
+        nn.init.xavier_uniform_(self.a_1.data, gain=1.414)
+        self.a_2 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
+        nn.init.xavier_uniform_(self.a_2.data, gain=1.414)
+
+        self.a_12 = nn.Parameter(torch.zeros(size=(out_features, out_features)))
+        nn.init.xavier_uniform_(self.a_12.data, gain=1.414)
+
+        self.W_xy= nn.Parameter(torch.zeros(size= (out_features, 1)))
+        nn.init.xavier_uniform_(self.W_xy.data, gain= 1.414)
+
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
+
+        self.bilinear= EmbedBilinear(num_basis, in1_features= in_features, in2_features= in_features, out_features= out_features)
 
         self.activation= activation
 
@@ -308,10 +589,10 @@ class Order2GraphAttentionLayer(nn.Module):
         else:
             return self.activation(h_out)
 
-    def __repr__(self):
+    def extra_repr(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
 
-
+"""
 
 class SpecialSpmmFunction(torch.autograd.Function):
     """Special function for only sparse region backpropataion layer."""

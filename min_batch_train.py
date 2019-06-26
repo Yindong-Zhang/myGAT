@@ -23,7 +23,7 @@ parser.add_argument("--batchsize", type= int, default= 32, help = "Size of each 
 parser.add_argument('--fastmode', action='store_true', default=False, help='Validate during training pass.')
 parser.add_argument('--sparse', action='store_true', default=False, help='GAT with sparse version or not.')
 parser.add_argument('--seed', type=int, default=72, help='Random seed.')
-parser.add_argument('--epochs', type=int, default=10000, help='Number of epochs to train.')
+parser.add_argument('--epochs', type=int, default=1, help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.05, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--hidden', type=int, default=16, help='Number of hidden units.')
@@ -32,14 +32,16 @@ parser.add_argument('--nb_heads_2', type=int, default= None, help='Number of hea
 parser.add_argument('--nb_heads_3', type=int, default= None, help='Number of head attentions in layer 3.')
 parser.add_argument('--nb_heads_4', type=int, default= None, help='Number of head attentions in layer 4.')
 parser.add_argument('--num_basis', type= int, default= 5, help= "Number of basis in second order approximation.")
-parser.add_argument('--dropout', type=float, default=0.6, help='Dropout rate (1 - keep probability).')
+parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leaky_relu.')
 parser.add_argument('--patience', type=int, default=100, help='Patience')
 parser.add_argument('--order1_attention', action= 'store_true', default= False,
                     help= "Whether to use diffused attention in model")
 parser.add_argument('--order2_attention', action= 'store_true', default= True,
                     help= "Whether to use improved attention in model")
-parser.add_argument("--print_every", type= int, default= 5, help = "Print info for print_every epochs")
+parser.add_argument('--mlp_attention', action= 'store_true', default= False,
+                    help = "whether use mlp when update node from neighbor info.")
+parser.add_argument("--print_every", type= int, default= 32, help = "Print info for print_every epochs")
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -52,35 +54,25 @@ if args.cuda:
 
 print(args)
 
-configStr= "dataset~%s-hidden~%s-nheads_1~%s-nheads_2~%s-nheads_3~%s-nheads_4~%s-learning_rate~%s-weight_decay~%s-dropout~%s-train_size~%s-val_size~%s-order1_attention~%s-order2_attention~%s-patience~%s" \
-    %("reddit", args.hidden, args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4, args.lr, args.weight_decay, args.dropout, args.train_size, args.val_size, args.order1_attention, args.order2_attention, args.patience)
+configStr= "dataset~%s-hidden~%s-nheads_1~%s-nheads_2~%s-nheads_3~%s-nheads_4~%s-learning_rate~%s-weight_decay~%s-dropout~%s-order1_attention~%s-order2_attention~%s-patience~%s" \
+    %("reddit", args.hidden, args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4, args.lr, args.weight_decay, args.dropout, args.order1_attention, args.order2_attention, args.patience)
 dump_dir = os.path.join('./output', configStr)
 if not os.path.exists(dump_dir):
     os.makedirs(dump_dir)
 
 # Load data
-# adj, features, labels, idx_train, idx_val, idx_test = get_dataset_and_split_planetoid(args.dataset, './data',)
 adj, features, labels, idx_train, idx_val, idx_test = load_reddit()
 print("load data conclude.")
 
-# convert numpy/scipy to torch tensor
-# adj = torch.FloatTensor(adj.todense())
-# features = torch.FloatTensor(features.todense())
-# convert one-hot encoding back.
-# labels = torch.LongTensor(np.where(labels)[1])
-
-
-
-
 att_type= None
-if args.order1_attention and not args.order2_attention:
+if args.order1_attention:
     att_type= 'order1'
-elif args.order2_attention and not args.order1_attention:
+elif args.order2_attention:
     att_type= 'order2'
-elif not args.order2_attention and not args.order1_attention:
-    att_type= None
+elif args.mlp_attention:
+    att_type= "mlp"
 else:
-    raise RuntimeError("Attention type hyperparameter not understood!!")
+    att_type= None
 
 num_layers = 0
 # Model and optimizer
@@ -92,6 +84,7 @@ if args.nb_heads_4 and args.nb_heads_3 and args.nb_heads_2:
                 nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, args.nb_heads_4 ],
                 alpha=args.alpha,
                 att_type = att_type,
+                num_basis= args.num_basis,
                 )
     num_layers = 5
     sample_per_layer = [15, 10, 5, 5, 5]
@@ -103,6 +96,7 @@ elif args.nb_heads_3 and args.nb_heads_2 and not args.nb_heads_4:
                 nheads_list=[args.nb_heads_1, args.nb_heads_2, args.nb_heads_3, ],
                 alpha=args.alpha,
                 att_type= att_type,
+                num_basis = args.num_basis,
                 )
     num_layers = 4
     sample_per_layer = [25, 10, 5, 5]
@@ -114,6 +108,7 @@ elif args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
                 nheads_list=[args.nb_heads_1, args.nb_heads_2],
                 alpha=args.alpha,
                 att_type= att_type,
+                num_basis=args.num_basis,
                 )
     num_layers = 3
     sample_per_layer = [25, 10, 5]
@@ -125,6 +120,7 @@ elif not args.nb_heads_2 and not args.nb_heads_3 and not args.nb_heads_4:
                 nheads_list=[args.nb_heads_1, ],
                 alpha=args.alpha,
                 att_type= att_type,
+               num_basis=args.num_basis,
                 )
     num_layers = 2
     sample_per_layer = [25, 10]
@@ -134,9 +130,9 @@ else:
 dataset_train = SubGraph(adj, features, labels, idx_train, num_layers, sample_per_layer)
 dataset_val = SubGraph(adj, features, labels, idx_val, num_layers, sample_per_layer)
 dataset_test = SubGraph(adj, features, labels, idx_test, num_layers, sample_per_layer)
-train_batch = DataLoader(dataset_train, batch_size= args.batchsize, shuffle= True, num_workers= 32, collate_fn= custom_collate)
-val_batch = DataLoader(dataset_val, batch_size= args.batchsize, shuffle= True, num_workers= 32, collate_fn= custom_collate)
-test_batch = DataLoader(dataset_test, batch_size= args.batchsize, shuffle= True, num_workers= 32, collate_fn= custom_collate)
+train_batch = DataLoader(dataset_train, batch_size= args.batchsize, shuffle= True, num_workers= 16, collate_fn= custom_collate)
+val_batch = DataLoader(dataset_val, batch_size= args.batchsize, shuffle= True, num_workers= 16, collate_fn= custom_collate)
+test_batch = DataLoader(dataset_test, batch_size= args.batchsize, shuffle= True, num_workers= 16, collate_fn= custom_collate)
 
 print(model)
 
@@ -202,13 +198,18 @@ bad_counter = 0
 best = 1E9
 best_epoch = 0
 for epoch in range(args.epochs):
-    # TODO:
+    print("Epoch: %s" %(epoch, ))
+    print("training...")
     model.train()
     train_loss, train_acc = loop_dataset(train_batch, optimizer= optimizer, print_every= args.print_every,
                                          use_gpu= args.cuda)
+    print("Training epoch %s: loss %.4f, acc %.4f."%(epoch, train_loss, train_acc))
 
     model.eval()
+    print("validating...")
     val_loss, val_acc = loop_dataset(val_batch, optimizer= None, print_every= args.print_every, use_gpu= args.cuda)
+    print("Validation epoch %s: loss %.4f, acc %.4f."%(epoch, val_loss, val_acc))
+
     loss_values.append(val_loss)
 
     torch.save(model.state_dict(), os.path.join(dump_dir, '{}.pkl'.format(epoch)))

@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from layers import GraphDiffusedAttentionLayer, SpGraphAttentionLayer, GraphAttentionLayer, Order1GraphAttentionLayer, Order2GraphAttentionLayer
+from layers import GraphDiffusedAttentionLayer, SpGraphAttentionLayer, GraphAttentionLayer, \
+    Order1GraphAttentionLayer, Order2GraphAttentionLayer, MLPGraphAttentionLayer
 from functools import reduce
 
 class GAT(nn.Module):
-    def __init__(self, nfeat, nclass, dropout, alpha, nheads_list, nhid_list, att_type):
+    def __init__(self, nfeat, nclass, dropout, alpha, nheads_list, nhid_list, att_type, num_basis):
         """Dense version of GAT."""
         super(GAT, self).__init__()
         self.dropout = dropout
@@ -17,6 +18,8 @@ class GAT(nn.Module):
             BaseLayer= Order2GraphAttentionLayer
         elif self.att_type == 'order1':
             BaseLayer= Order1GraphAttentionLayer
+        elif self.att_type == 'mlp':
+            BaseLayer = MLPGraphAttentionLayer
         elif self.att_type == None:
             BaseLayer= GraphAttentionLayer
         else:
@@ -27,11 +30,11 @@ class GAT(nn.Module):
         nlayers= len(nheads_list)
         self.layers= nn.ModuleList()
 
-        self.layers.append(nn.ModuleList([BaseLayer(nfeat, nhid_list[0], dropout=dropout, alpha=alpha, activation= F.elu) for _ in range(nheads_list[0])]))
+        self.layers.append(nn.ModuleList([BaseLayer(nfeat, nhid_list[0], dropout=dropout, alpha=alpha, num_basis = num_basis, activation= F.elu) for _ in range(nheads_list[0])]))
         for l in range(1, nlayers):
-            self.layers.append(nn.ModuleList([BaseLayer(nhid_list[l - 1] * nheads_list[l - 1], nhid_list[l], dropout=dropout, alpha=alpha, activation= F.elu)
+            self.layers.append(nn.ModuleList([BaseLayer(nhid_list[l - 1] * nheads_list[l - 1], nhid_list[l], dropout=dropout, alpha=alpha, num_basis= num_basis, activation= F.elu)
                                               for _ in range(nheads_list[l]) ] ) )
-        self.out_att = BaseLayer(nhid_list[-1] * nheads_list[-1], nclass, dropout=dropout, alpha=alpha, activation= lambda x: x)
+        self.out_att = BaseLayer(nhid_list[-1] * nheads_list[-1], nclass, dropout=dropout, alpha=alpha, num_basis = num_basis, activation= lambda x: x)
 
     def forward(self, x, adj):
         x = F.dropout(x, self.dropout, training=self.training)
