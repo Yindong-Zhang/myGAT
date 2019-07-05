@@ -78,18 +78,17 @@ def bfs_sample(start, adj, distance, sample_num):
 
 
 class SubGraph(Dataset):
-    def __init__(self, adj, features, labels, idx, num_layers, num_samples):
+    def __init__(self, adj, features, labels, idx, num_samples):
         """
 
         :param adj: suppose adj a sparse adjacent matrix
         :param features: a numpy array in shape (num_nodes, num_features)
         :param labels: a numpy array in shape (num_nodes, 1) if not multi label task.
-        :param num_layers:
         """
         self.adj = adj
         self.features = features
-        self.num_layers = num_layers
         self.num_samples = num_samples
+        self.num_layers = len(num_samples)
         self.labels = labels
         self.idx = idx
         self.num_nodes = len(idx)

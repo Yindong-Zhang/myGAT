@@ -45,7 +45,7 @@ class GAT(nn.Module):
         return x
 
 class SumTailGAT(nn.Module):
-    def __init__(self, nfeat, nclass, dropout, alpha, nheads_list, nhid_list, nheads_last, att_type):
+    def __init__(self, nfeat, nclass, dropout, alpha, nheads_list, nhid_list, nheads_last, att_type, num_basis):
         """Dense version of GAT."""
         super(SumTailGAT, self).__init__()
         self.dropout = dropout
@@ -57,6 +57,8 @@ class SumTailGAT(nn.Module):
             BaseLayer= Order2GraphAttentionLayer
         elif self.att_type == 'order1':
             BaseLayer= Order1GraphAttentionLayer
+        elif self.att_type == 'mlp':
+            BaseLayer = MLPGraphAttentionLayer
         elif self.att_type == None:
             BaseLayer= GraphAttentionLayer
         else:
@@ -67,9 +69,9 @@ class SumTailGAT(nn.Module):
         nlayers= len(nheads_list)
         self.layers= nn.ModuleList()
 
-        self.layers.append(nn.ModuleList([BaseLayer(nfeat, nhid_list[0], dropout=dropout, alpha=alpha, activation= F.elu) for _ in range(nheads_list[0])]))
+        self.layers.append(nn.ModuleList([BaseLayer(nfeat, nhid_list[0], dropout=dropout, alpha=alpha, num_basis = num_basis, activation= F.elu) for _ in range(nheads_list[0])]))
         for l in range(1, nlayers):
-            self.layers.append(nn.ModuleList([BaseLayer(nhid_list[l - 1] * nheads_list[l - 1], nhid_list[l], dropout=dropout, alpha=alpha, activation= F.elu)
+            self.layers.append(nn.ModuleList([BaseLayer(nhid_list[l - 1] * nheads_list[l - 1], nhid_list[l], dropout=dropout, alpha=alpha, num_basis= num_basis, activation= F.elu)
                                               for _ in range(nheads_list[l]) ] ) )
         self.out_att = nn.ModuleList([BaseLayer(nhid_list[-1] * nheads_list[-1], nclass, dropout=dropout, alpha=alpha, activation= None) for _ in range(nheads_last)])
 
@@ -84,7 +86,7 @@ class SumTailGAT(nn.Module):
         return x
 
 class FullyConnectedGAT(nn.Module):
-    def __init__(self, nfeat, nclass, dropout, alpha, nheads_list, nhid_list, att_type):
+    def __init__(self, nfeat, nclass, dropout, alpha, nheads_list, nhid_list, att_type, num_basis, ):
         """Dense version of GAT."""
         super(FullyConnectedGAT, self).__init__()
         self.dropout = dropout
@@ -96,6 +98,8 @@ class FullyConnectedGAT(nn.Module):
             BaseLayer= Order2GraphAttentionLayer
         elif self.att_type == 'order1':
             BaseLayer= Order1GraphAttentionLayer
+        elif self.att_type == 'mlp':
+            BaseLayer = MLPGraphAttentionLayer
         elif self.att_type == None:
             BaseLayer= GraphAttentionLayer
         else:
@@ -106,9 +110,9 @@ class FullyConnectedGAT(nn.Module):
         nlayers= len(nheads_list)
         self.layers= nn.ModuleList()
 
-        self.layers.append(nn.ModuleList([BaseLayer(nfeat, nhid_list[0], dropout=dropout, alpha=alpha, activation= F.elu) for _ in range(nheads_list[0])]))
+        self.layers.append(nn.ModuleList([BaseLayer(nfeat, nhid_list[0], dropout=dropout, alpha=alpha, num_basis = num_basis, activation= F.elu) for _ in range(nheads_list[0])]))
         for l in range(1, nlayers):
-            self.layers.append(nn.ModuleList([BaseLayer(nhid_list[l - 1] * nheads_list[l - 1], nhid_list[l], dropout=dropout, alpha=alpha, activation= F.elu)
+            self.layers.append(nn.ModuleList([BaseLayer(nhid_list[l - 1] * nheads_list[l - 1], nhid_list[l], dropout=dropout, alpha=alpha, num_basis= num_basis, activation= F.elu)
                                               for _ in range(nheads_list[l]) ] ) )
         self.linear= nn.Linear(nhid_list[-1] * nheads_list[-1], nclass)
 

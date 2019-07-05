@@ -94,17 +94,18 @@ class GraphAttentionLayer(BaseGraphAttentionLayer):
         return h_out
 
     def _update(self, feat, feat_prime):
+        if self.activation != None:
+            return self.activation(feat_prime)
+        else:
+            return feat_prime
+
         return feat_prime
 
 
     def forward(self, input, adj):
         h_prime = self._aggregate(input, adj)
-        h_out = self._update(input, h_prime)
+        return self._update(input, h_prime)
 
-        if self.activation != None:
-            return self.activation(h_out)
-        else:
-            return h_out
 
     def extra_repr(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
@@ -195,9 +196,8 @@ class Order1GraphAttentionLayer(nn.Module):
 
         self.activation= activation
 
-
-    def forward(self, input, adj):
-        h = torch.matmul(input, self.W)
+    def _attention(self, feat, adj):
+        h = torch.matmul(feat, self.W)
 
         Ax = torch.matmul(h, self.a_1)
         Ay = torch.matmul(h, self.a_2)
@@ -218,17 +218,26 @@ class Order1GraphAttentionLayer(nn.Module):
         attention = F.softmax(e, dim=-1)
         # attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
         attention = F.dropout(attention, self.dropout, training=self.training)
-        h_prime = torch.matmul(attention, input)
+        return attention
 
-        # similar to residual connection here...
-        h_1= torch.matmul(input, self.W_1)
-        h_2= torch.matmul(h_prime, self.W_2)
-        h_out= h_1 + h_2
+    def _aggregate(self, feat, adj):
+        attention = self._attention(feat, adj)
+        h_prime = torch.matmul(attention, feat)
+        return h_prime
+
+    def _update(self, feat, feat_agg):
+        h_1 = torch.matmul(feat, self.W_1)
+        h_2 = torch.matmul(feat_agg, self.W_2)
+        h_out = h_1 + h_2
 
         if not self.activation:
             return h_out
         else:
             return self.activation(h_out)
+
+    def forward(self, feat, adj):
+        feat_agg = self._aggregate(feat, adj)
+        return self._update(feat, feat_agg)
 
     def extra_repr(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
@@ -514,85 +523,6 @@ class Order2GraphAttentionLayer(nn.Module):
 
     def extra_repr(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
-
-"""
-class Order2GraphAttentionLayer(nn.Module):
-    ""
-    Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
-    ""
-
-    def __init__(self, in_features, out_features, dropout, alpha, activation, num_basis = 5):
-        super(Order2GraphAttentionLayer, self).__init__()
-        self.dropout = dropout
-        self.in_features = in_features
-        self.out_features = out_features
-        self.alpha = alpha
-        self.num_basis = num_basis
-
-        self.W= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
-        nn.init.xavier_uniform_(self.W.data, gain=1.414)
-        self.W_1= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
-        nn.init.xavier_uniform_(self.W_1.data, gain=1.414)
-
-        self.W_2 = nn.Parameter(torch.zeros(size=(in_features, out_features), ))
-        nn.init.xavier_uniform_(self.W_2.data, gain=1.414)
-
-        self.a_1 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
-        nn.init.xavier_uniform_(self.a_1.data, gain=1.414)
-        self.a_2 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
-        nn.init.xavier_uniform_(self.a_2.data, gain=1.414)
-
-        self.a_12 = nn.Parameter(torch.zeros(size=(out_features, out_features)))
-        nn.init.xavier_uniform_(self.a_12.data, gain=1.414)
-
-        self.W_xy= nn.Parameter(torch.zeros(size= (out_features, 1)))
-        nn.init.xavier_uniform_(self.W_xy.data, gain= 1.414)
-
-        self.leakyrelu = nn.LeakyReLU(self.alpha)
-
-        self.bilinear= EmbedBilinear(num_basis, in1_features= in_features, in2_features= in_features, out_features= out_features)
-
-        self.activation= activation
-
-    def forward(self, input, adj):
-        h = torch.matmul(input, self.W)
-
-        Ax = torch.matmul(h, self.a_1)
-        Ay = torch.matmul(h, self.a_2)
-        A_xy_1= torch.matmul(h, self.a_12)
-        A_xy= torch.matmul(A_xy_1, h.permute(0, 2, 1))
-        # A_xy = torch.chain_matmul(h, self.a_12, h.permute(1, 0))
-
-        # Ax_prime= torch.matmul(nd_flags, Ax.permute(0, 2, 1))
-        # nd_flags_T= nd_flags.permute(0, 2, 1)
-        # Ay_prime= torch.matmul(Ay, nd_flags_T)
-        Ax_prime= Ax.permute(0, 2, 1)
-        Ay_prime= Ay
-        logits = Ax_prime + Ay_prime + A_xy
-
-        e = self.leakyrelu(logits)
-        zero_vec = -9e15 * e.new_tensor([1., ])
-        e = torch.where(adj > 0, e, zero_vec)
-
-        attention = F.softmax(e, dim=-1)
-        # attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
-        attention = F.dropout(attention, self.dropout, training=self.training)
-        h_prime = torch.matmul(attention, input)
-
-        h_1= torch.matmul(input, self.W_1)
-        h_2= torch.matmul(h_prime, self.W_2)
-        h_12= self.bilinear(input, h_prime)
-        h_out= h_1 + h_2 + h_12
-
-        if not self.activation:
-            return h_out
-        else:
-            return self.activation(h_out)
-
-    def extra_repr(self):
-        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
-
-"""
 
 class SpecialSpmmFunction(torch.autograd.Function):
     """Special function for only sparse region backpropataion layer."""
