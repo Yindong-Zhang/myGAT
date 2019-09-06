@@ -92,9 +92,7 @@ class FullyConnectedGAT(nn.Module):
         self.dropout = dropout
         self.att_type= att_type
 
-        if self.att_type == 'diffused':
-            BaseLayer= GraphDiffusedAttentionLayer
-        elif self.att_type == 'order2':
+        if self.att_type == 'order2':
             BaseLayer= Order2GraphAttentionLayer
         elif self.att_type == 'order1':
             BaseLayer= Order1GraphAttentionLayer

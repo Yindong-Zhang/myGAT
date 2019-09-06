@@ -160,37 +160,26 @@ class GraphDiffusedAttentionLayer(nn.Module):
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
 
-
-class Order1GraphAttentionLayer(nn.Module):
+# TODO:
+class Order1GraphMLPAttentionLayer(nn.Module):
     """
     Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
     def __init__(self, in_features, out_features, dropout, alpha, activation, num_basis = 5):
-        super(Order1GraphAttentionLayer, self).__init__()
+        super(Order1GraphMLPAttentionLayer, self).__init__()
         self.dropout = dropout
         self.in_features = in_features
         self.out_features = out_features
         self.alpha = alpha
 
-        self.W= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
-        nn.init.xavier_uniform_(self.W.data, gain=1.414)
         self.W_1= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
         nn.init.xavier_uniform_(self.W_1.data, gain=1.414)
 
         self.W_2 = nn.Parameter(torch.zeros(size=(in_features, out_features), ))
         nn.init.xavier_uniform_(self.W_2.data, gain=1.414)
 
-        self.a_1 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
-        nn.init.xavier_uniform_(self.a_1.data, gain=1.414)
-        self.a_2 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
-        nn.init.xavier_uniform_(self.a_2.data, gain=1.414)
-
-        self.a_12 = nn.Parameter(torch.zeros(size=(out_features, out_features)))
-        nn.init.xavier_uniform_(self.a_12.data, gain=1.414)
-
-        self.W_xy= nn.Parameter(torch.zeros(size= (out_features, 1)))
-        nn.init.xavier_uniform_(self.W_xy.data, gain= 1.414)
+        self.attention_layer = BiInteractionLayer()
 
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
@@ -230,6 +219,87 @@ class Order1GraphAttentionLayer(nn.Module):
         h_2 = torch.matmul(feat_agg, self.W_2)
         h_out = h_1 + h_2
 
+        if not self.activation:
+            return h_out
+        else:
+            return self.activation(h_out)
+
+    def forward(self, feat, adj):
+        feat_agg = self._aggregate(feat, adj)
+        return self._update(feat, feat_agg)
+
+    def extra_repr(self):
+        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+
+class Order1GraphAttentionLayer(nn.Module):
+    """
+    Improved GAT layer, similar to https://arxiv.org/abs/1710.10903
+    """
+
+    def __init__(self, in_features, out_features, dropout, alpha, activation, num_basis = 5):
+        super(Order1GraphAttentionLayer, self).__init__()
+        self.dropout = dropout
+        self.in_features = in_features
+        self.out_features = out_features
+        self.alpha = alpha
+
+        self.W= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W.data, gain=1.414)
+        self.W_1= nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W_1.data, gain=1.414)
+
+        self.W_2 = nn.Parameter(torch.zeros(size=(in_features, out_features), ))
+        nn.init.xavier_uniform_(self.W_2.data, gain=1.414)
+
+        self.a_1 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
+        nn.init.xavier_uniform_(self.a_1.data, gain=1.414)
+        self.a_2 = nn.Parameter(torch.zeros(size=(out_features, 1), dtype=torch.float))
+        nn.init.xavier_uniform_(self.a_2.data, gain=1.414)
+
+        self.a_12 = nn.Parameter(torch.zeros(size=(out_features, out_features)))
+        bound = 1 / math.sqrt(self.a_12.size(0))
+        nn.init.uniform_(self.a_12, -bound, bound)
+        # nn.init.xavier_uniform_(self.a_12.data, gain=1.414)
+
+        self.W_xy= nn.Parameter(torch.zeros(size= (out_features, 1)))
+        nn.init.xavier_uniform_(self.W_xy.data, gain= 1.414)
+
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
+
+        self.activation= activation
+
+    def _attention(self, feat, adj):
+        h = torch.matmul(feat, self.W)
+
+        Ax = torch.matmul(h, self.a_1)
+        Ay = torch.matmul(h, self.a_2)
+        # A_xy_1= torch.matmul(h, self.a_12)
+        # A_xy= torch.matmul(A_xy_1, h.permute(0, 2, 1))
+
+        Ax_prime= Ax.permute(0, 2, 1)
+        Ay_prime= Ay
+        logits = Ax_prime + Ay_prime
+        # logits = Ax_prime + Ay_prime + A_xy
+
+        e = self.leakyrelu(logits)
+        zero_vec = -9e15 * e.new_tensor([1., ])
+        e = torch.where(adj > 0, e, zero_vec)
+
+        attention = F.softmax(e, dim=-1)
+        # attention= torch.where(adj > 0, attention, attention.new_tensor([0., ]))
+        attention = F.dropout(attention, self.dropout, training=self.training)
+        return attention
+
+    def _aggregate(self, feat, adj):
+        attention = self._attention(feat, adj)
+        h_prime = torch.matmul(attention, feat)
+        return h_prime
+
+    def _update(self, feat, feat_agg):
+        # h_1 = torch.matmul(feat, self.W_1)
+        h_2 = torch.matmul(feat_agg, self.W)
+        h_out = h_2
+        # h_out = h_1 + h_2
         if not self.activation:
             return h_out
         else:
